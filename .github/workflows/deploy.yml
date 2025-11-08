@@ -206,10 +206,9 @@ jobs:
           docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
 
   # ===============================
-  # 8️⃣ Terraform Init
+  # 8️⃣ Terraform
   # ===============================
-  terraform-init:
-    name: 🪄 Terraform Init
+  terraform:
     runs-on: ubuntu-latest
     needs: [docker-consumer, docker-producer]
     steps:
@@ -217,53 +216,13 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.7
-      - run: terraform init -upgrade
+      - name: Terraform Init
+        run: terraform init -upgrade
         working-directory: ./terraform
-      - name: Upload .terraform
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-cache
-          path: ./terraform/.terraform
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+        working-directory: ./terraform
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+        working-directory: ./terraform
 
-  # ===============================
-  # 9️⃣ Terraform Plan
-  # ===============================
-  terraform-plan:
-    name: 🧮 Terraform Plan
-    runs-on: ubuntu-latest
-    needs: terraform-init
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.9.7
-      - name: Download Terraform Cache
-        uses: actions/download-artifact@v4
-        with:
-          name: terraform-cache
-          path: ./terraform/.terraform
-      - run: terraform plan -out=tfplan
-        working-directory: ./terraform
-      - uses: actions/upload-artifact@v4
-        with:
-          name: tfplan
-          path: ./terraform/tfplan
-
-  # ===============================
-  # 🔟 Terraform Apply
-  # ===============================
-  terraform-apply:
-    name: 🚀 Terraform Apply
-    runs-on: ubuntu-latest
-    needs: terraform-plan
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.9.7
-      - uses: actions/download-artifact@v4
-        with:
-          name: tfplan
-          path: ./terraform
-      - run: terraform apply -auto-approve tfplan
-        working-directory: ./terraform
