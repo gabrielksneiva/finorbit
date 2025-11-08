@@ -398,6 +398,174 @@ resource "aws_db_instance" "finorbit_db" {
 }
 
 # =======================
+# 🌟 BLOCO 11 — Observabilidade / Visibilidade
+# =======================
+
+# 🔔 SNS Topic para alertas
+resource "aws_sns_topic" "alerts" {
+  name = "${local.name_prefix}-alerts"
+}
+
+# =======================
+# 📊 Métricas customizadas via CloudWatch Metric Filters
+# =======================
+
+# Lambda Errors - Producer
+resource "aws_cloudwatch_metric_alarm" "producer_lambda_errors" {
+  alarm_name          = "${local.name_prefix}-producer-lambda-errors"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "Errors"
+  namespace           = "AWS/Lambda"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  dimensions = {
+    FunctionName = aws_lambda_function.producer.function_name
+  }
+}
+
+# Lambda Errors - Consumer Deposit
+resource "aws_cloudwatch_metric_alarm" "consumer_deposit_lambda_errors" {
+  alarm_name          = "${local.name_prefix}-consumer-deposit-lambda-errors"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "Errors"
+  namespace           = "AWS/Lambda"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  dimensions = {
+    FunctionName = aws_lambda_function.consumer_deposit.function_name
+  }
+}
+
+# Lambda Errors - Consumer Withdraw
+resource "aws_cloudwatch_metric_alarm" "consumer_withdraw_lambda_errors" {
+  alarm_name          = "${local.name_prefix}-consumer-withdraw-lambda-errors"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "Errors"
+  namespace           = "AWS/Lambda"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  dimensions = {
+    FunctionName = aws_lambda_function.consumer_withdraw.function_name
+  }
+}
+
+# SQS ApproximateNumberOfMessagesVisible - Deposit Queue
+resource "aws_cloudwatch_metric_alarm" "deposit_queue_length" {
+  alarm_name          = "${local.name_prefix}-deposit-queue-length"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 5 # Ajuste conforme sua necessidade
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  dimensions = {
+    QueueName = aws_sqs_queue.transactions_deposit_queue.name
+  }
+}
+
+# SQS ApproximateNumberOfMessagesVisible - Withdraw Queue
+resource "aws_cloudwatch_metric_alarm" "withdraw_queue_length" {
+  alarm_name          = "${local.name_prefix}-withdraw-queue-length"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 5
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  dimensions = {
+    QueueName = aws_sqs_queue.transactions_withdraw_queue.name
+  }
+}
+
+# RDS CPU Utilization
+resource "aws_cloudwatch_metric_alarm" "rds_high_cpu" {
+  alarm_name          = "${local.name_prefix}-rds-high-cpu"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/RDS"
+  period              = 60
+  statistic           = "Average"
+  threshold           = 70
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  dimensions = {
+    DBInstanceIdentifier = aws_db_instance.finorbit_db.id
+  }
+}
+
+# =======================
+# 📈 Dashboard CloudWatch
+# =======================
+resource "aws_cloudwatch_dashboard" "finorbit_dashboard" {
+  dashboard_name = "${local.name_prefix}-dashboard"
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type = "metric",
+        x = 0, y = 0, width = 12, height = 6,
+        properties = {
+          metrics = [["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.producer.function_name]]
+          title = "Producer Lambda Errors"
+        }
+      },
+      {
+        type = "metric",
+        x = 0, y = 7, width = 12, height = 6,
+        properties = {
+          metrics = [["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.consumer_deposit.function_name]]
+          title = "Consumer Deposit Lambda Errors"
+        }
+      },
+      {
+        type = "metric",
+        x = 0, y = 14, width = 12, height = 6,
+        properties = {
+          metrics = [["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.consumer_withdraw.function_name]]
+          title = "Consumer Withdraw Lambda Errors"
+        }
+      },
+      {
+        type = "metric",
+        x = 13, y = 0, width = 12, height = 6,
+        properties = {
+          metrics = [["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.transactions_deposit_queue.name]]
+          title = "Deposit Queue Length"
+        }
+      },
+      {
+        type = "metric",
+        x = 13, y = 7, width = 12, height = 6,
+        properties = {
+          metrics = [["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.transactions_withdraw_queue.name]]
+          title = "Withdraw Queue Length"
+        }
+      },
+      {
+        type = "metric",
+        x = 13, y = 14, width = 12, height = 6,
+        properties = {
+          metrics = [["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", aws_db_instance.finorbit_db.id]]
+          title = "RDS CPU Utilization"
+        }
+      }
+    ]
+  })
+}
+
+# =======================
 # 📤 OUTPUTS
 # =======================
 output "api_url" {
@@ -414,4 +582,12 @@ output "deposit_queue_url" {
 
 output "withdraw_queue_url" {
   value = aws_sqs_queue.transactions_withdraw_queue.url
+}
+
+output "alerts_sns_topic_arn" {
+  value = aws_sns_topic.alerts.arn
+}
+
+output "cloudwatch_dashboard_url" {
+  value = "https://${var.env}.console.aws.amazon.com/cloudwatch/home?region=${var.region}#dashboards:name=${aws_cloudwatch_dashboard.finorbit_dashboard.dashboard_name}"
 }
