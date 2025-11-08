@@ -128,10 +128,12 @@ resource "aws_sqs_queue_policy" "allow_sns_withdraw" {
 # =======================
 resource "aws_ecr_repository" "consumer_repo" {
   name = "${local.name_prefix}-consumer"
+  force_delete = true
 }
 
 resource "aws_ecr_repository" "producer_repo" {
   name = "${local.name_prefix}-producer"
+  force_delete = true
 }
 
 resource "aws_ecr_repository_policy" "allow_lambda_consumer" {
