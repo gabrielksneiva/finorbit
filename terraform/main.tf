@@ -146,13 +146,11 @@ resource "aws_sns_topic_policy" "allow_lambda_publish" {
 data "aws_caller_identity" "current" {}
 
 resource "aws_ecr_repository" "consumer_repo" {
-  name = "${local.name_prefix}-consumer"
-  force_delete = true
+  name = "finorbit-consumer"
 }
 
 resource "aws_ecr_repository" "producer_repo" {
-  name = "${local.name_prefix}-producer"
-  force_delete = true
+  name = "finorbit-producer"
 }
 
 resource "aws_ecr_lifecycle_policy" "consumer_policy" {
