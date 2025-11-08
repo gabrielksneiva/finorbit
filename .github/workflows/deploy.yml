@@ -86,68 +86,113 @@ jobs:
           path: coverage.out
 
   # ===============================
-  # 4️⃣ Docker Build & Push Consumer
+  # 8️⃣ Terraform Infra (cria ECR etc)
+  # ===============================
+  terraform-infra:
+    name: 🌍 Terraform Infra (ECR & Base)
+    runs-on: ubuntu-latest
+    needs: [lint-test-consumer, lint-test-producer]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.7
+
+      - name: Terraform Init
+        run: terraform init -upgrade
+        working-directory: ./terraform
+
+      - name: Terraform Apply (Infra)
+        run: terraform apply -auto-approve -target=aws_ecr_repository.finorbit-consumer -target=aws_ecr_repository.finorbit-producer
+        working-directory: ./terraform
+
+
+  # ===============================
+  # 9️⃣ Docker Build & Push Consumer
   # ===============================
   docker-consumer:
     name: 🐳 Docker Consumer
     runs-on: ubuntu-latest
-    needs: [lint-test-consumer]
+    needs: terraform-infra
     defaults:
       run:
         working-directory: ./consumer
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Configurar AWS
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: 🐳 Login ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: 🧱 Build & Push
         env:
           ECR_REPOSITORY: finorbit-consumer
+          AWS_REGION: ${{ env.AWS_REGION }}
           ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          COMMIT_HASH: ${{ github.sha }}
         run: |
-          COMMIT_HASH=$(echo $GITHUB_SHA | cut -c1-7)
-          docker build -t $ECR_REPOSITORY:$COMMIT_HASH .
-          docker tag $ECR_REPOSITORY:$COMMIT_HASH $ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$COMMIT_HASH
-          docker push $ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$COMMIT_HASH
-          echo "IMAGE_TAG_CONSUMER=$COMMIT_HASH" >> $GITHUB_ENV
+          TAG=$(echo $COMMIT_HASH | cut -c1-7)
+          docker build -t $ECR_REPOSITORY:$TAG -t $ECR_REPOSITORY:latest .
+          docker tag $ECR_REPOSITORY:$TAG $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$TAG
+          docker tag $ECR_REPOSITORY:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+          docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY --all-tags
+
 
   # ===============================
-  # 5️⃣ Docker Build & Push Producer
+  # 🔟 Docker Build & Push Producer
   # ===============================
   docker-producer:
     name: 🐳 Docker Producer
     runs-on: ubuntu-latest
-    needs: [lint-test-producer]
+    needs: terraform-infra
     defaults:
       run:
         working-directory: ./producer
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Configurar AWS
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: 🐳 Login ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: 🧱 Build & Push
         env:
           ECR_REPOSITORY: finorbit-producer
+          AWS_REGION: ${{ env.AWS_REGION }}
           ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          COMMIT_HASH: ${{ github.sha }}
         run: |
-          COMMIT_HASH=$(echo $GITHUB_SHA | cut -c1-7)
-          docker build -t $ECR_REPOSITORY:$COMMIT_HASH .
-          docker tag $ECR_REPOSITORY:$COMMIT_HASH $ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$COMMIT_HASH
-          docker push $ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$COMMIT_HASH
-          echo "IMAGE_TAG_PRODUCER=$COMMIT_HASH" >> $GITHUB_ENV
+          TAG=$(echo $COMMIT_HASH | cut -c1-7)
+          docker build -t $ECR_REPOSITORY:$TAG -t $ECR_REPOSITORY:latest .
+          docker tag $ECR_REPOSITORY:$TAG $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$TAG
+          docker tag $ECR_REPOSITORY:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+          docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY --all-tags
+
 
   # ===============================
-  # 6️⃣ Terraform Deploy
+  # 1️⃣1️⃣ Terraform Deploy (usa imagens novas)
   # ===============================
-  terraform:
-    name: 🌍 Terraform Deploy
+  terraform-deploy:
+    name: 🚀 Terraform Deploy (Lambda/ECS)
     runs-on: ubuntu-latest
     needs: [docker-consumer, docker-producer]
     steps:
@@ -169,14 +214,11 @@ jobs:
         run: terraform plan -out=tfplan
         working-directory: ./terraform
 
-      - name: Terraform Apply
-        env:
-          TF_VAR_consumer_image_tag: ${{ env.IMAGE_TAG_CONSUMER }}
-          TF_VAR_producer_image_tag: ${{ env.IMAGE_TAG_PRODUCER }}
+      - name: Terraform Apply (Deploy)
         run: terraform apply -auto-approve tfplan
         working-directory: ./terraform
 
-      - name: Terraform Safe Rollback
+      - name: Rollback se falhar
         if: failure()
         run: |
           echo "❌ Terraform apply falhou! Iniciando rollback seguro..."
