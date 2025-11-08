@@ -155,6 +155,44 @@ resource "aws_ecr_repository" "producer_repo" {
   force_delete = true
 }
 
+resource "aws_ecr_lifecycle_policy" "consumer_policy" {
+  repository = aws_ecr_repository.consumer_repo.name
+
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Remove untagged images older than 1 day"
+      selection = {
+        tagStatus = "untagged"
+        countType = "sinceImagePushed"
+        countUnit = "days"
+        countNumber = 1
+      }
+      action = { type = "expire" }
+    }]
+  })
+}
+
+# Política de ciclo de vida para o repositório do producer
+resource "aws_ecr_lifecycle_policy" "producer_policy" {
+  repository = aws_ecr_repository.producer_repo.name
+
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Remove untagged images older than 1 day"
+      selection = {
+        tagStatus = "untagged"
+        countType = "sinceImagePushed"
+        countUnit = "days"
+        countNumber = 1
+      }
+      action = { type = "expire" }
+    }]
+  })
+}
+
+
 # Política que permite Lambda puxar imagens
 resource "aws_ecr_repository_policy" "allow_lambda_pull_consumer" {
   repository = aws_ecr_repository.consumer_repo.name
