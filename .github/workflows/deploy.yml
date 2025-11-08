@@ -20,136 +20,136 @@ jobs:
     name: 🛠️ Setup
     runs-on: ubuntu-latest
     steps:
-      - name: 📥 Checkout do código
+      - name: 📥 Checkout
         uses: actions/checkout@v4
-      - name: 🧰 Configurar Go
+      - name: 🧰 Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
 
   # ===============================
-  # 2️⃣ Lint Consumer
+  # 2️⃣ Lint & Test Consumer
   # ===============================
-  lint-consumer:
-    name: 🔍 Lint Consumer
+  lint-test-consumer:
+    name: 🔍🧪 Consumer
     runs-on: ubuntu-latest
     needs: setup
     defaults:
       run:
         working-directory: ./consumer
     steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-      - name: 📝 Rodar Lint
-        run: go fmt ./...
-
-  # ===============================
-  # 3️⃣ Lint Producer
-  # ===============================
-  lint-producer:
-    name: 🔍 Lint Producer
-    runs-on: ubuntu-latest
-    needs: setup
-    defaults:
-      run:
-        working-directory: ./producer
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-      - name: 📝 Rodar Lint
-        run: go fmt ./...
-
-  # ===============================
-  # 4️⃣ Testes Consumer
-  # ===============================
-  test-consumer:
-    name: 🧪 Testes Consumer
-    runs-on: ubuntu-latest
-    needs: [setup, lint-consumer]
-    defaults:
-      run:
-        working-directory: ./consumer
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-      - name: 🧪 Rodar testes
-        env:
-          GO_ENV: ${{ env.GO_ENV }}
-          COVERAGE_THRESHOLD: ${{ env.COVERAGE_THRESHOLD }}
-        run: |
+      - uses: actions/checkout@v4
+      - run: go fmt ./...
+      - run: |
           set -e
-          set -x
-
-          # Organizar dependências
           go mod tidy
-
-          # Rodar testes com cobertura
           go test -v -coverprofile=coverage.out ./...
-
-          # Obter cobertura total
           coverage=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
-          coverage=${coverage:-0}
           echo "Cobertura Consumer: $coverage%"
-
-          # Comparar com o threshold
           cov_int=$(echo "$coverage < $COVERAGE_THRESHOLD" | bc)
           if [ "$cov_int" -eq 1 ]; then
             echo "❌ Cobertura abaixo de $COVERAGE_THRESHOLD% ($coverage%)"
             exit 1
           fi
-
-      - name: 📤 Upload Coverage Consumer
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: coverage-consumer
           path: coverage.out
 
   # ===============================
-  # 5️⃣ Testes Producer
+  # 3️⃣ Lint & Test Producer
   # ===============================
-  test-producer:
-    name: 🧪 Testes Producer
+  lint-test-producer:
+    name: 🔍🧪 Producer
     runs-on: ubuntu-latest
-    needs: [setup, lint-producer]
+    needs: setup
     defaults:
       run:
         working-directory: ./producer
     steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-      - name: 🧪 Rodar testes
-        env:
-          GO_ENV: ${{ env.GO_ENV }}
-          COVERAGE_THRESHOLD: ${{ env.COVERAGE_THRESHOLD }}
-        run: |
+      - uses: actions/checkout@v4
+      - run: go fmt ./...
+      - run: |
           set -e
-          set -x
-
           go mod tidy
           go test -v -coverprofile=coverage.out ./...
-
           coverage=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
-          coverage=${coverage:-0}
           echo "Cobertura Producer: $coverage%"
-
           cov_int=$(echo "$coverage < $COVERAGE_THRESHOLD" | bc)
           if [ "$cov_int" -eq 1 ]; then
             echo "❌ Cobertura abaixo de $COVERAGE_THRESHOLD% ($coverage%)"
             exit 1
           fi
-      - name: 📤 Upload Coverage Producer
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: coverage-producer
           path: coverage.out
 
   # ===============================
-  # 8️⃣ Terraform
+  # 4️⃣ Docker Build & Push Consumer
+  # ===============================
+  docker-consumer:
+    name: 🐳 Docker Consumer
+    runs-on: ubuntu-latest
+    needs: [lint-test-consumer]
+    defaults:
+      run:
+        working-directory: ./consumer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - name: 🧱 Build & Push
+        env:
+          ECR_REPOSITORY: finorbit-consumer
+          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        run: |
+          COMMIT_HASH=$(echo $GITHUB_SHA | cut -c1-7)
+          docker build -t $ECR_REPOSITORY:$COMMIT_HASH .
+          docker tag $ECR_REPOSITORY:$COMMIT_HASH $ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$COMMIT_HASH
+          docker push $ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$COMMIT_HASH
+          echo "IMAGE_TAG_CONSUMER=$COMMIT_HASH" >> $GITHUB_ENV
+
+  # ===============================
+  # 5️⃣ Docker Build & Push Producer
+  # ===============================
+  docker-producer:
+    name: 🐳 Docker Producer
+    runs-on: ubuntu-latest
+    needs: [lint-test-producer]
+    defaults:
+      run:
+        working-directory: ./producer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - name: 🧱 Build & Push
+        env:
+          ECR_REPOSITORY: finorbit-producer
+          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        run: |
+          COMMIT_HASH=$(echo $GITHUB_SHA | cut -c1-7)
+          docker build -t $ECR_REPOSITORY:$COMMIT_HASH .
+          docker tag $ECR_REPOSITORY:$COMMIT_HASH $ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$COMMIT_HASH
+          docker push $ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$COMMIT_HASH
+          echo "IMAGE_TAG_PRODUCER=$COMMIT_HASH" >> $GITHUB_ENV
+
+  # ===============================
+  # 6️⃣ Terraform Deploy
   # ===============================
   terraform:
     name: 🌍 Terraform Deploy
     runs-on: ubuntu-latest
-    needs: [test-consumer, test-producer]
+    needs: [docker-consumer, docker-producer]
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
@@ -161,16 +161,18 @@ jobs:
         with:
           terraform_version: 1.9.7
 
-      # Inicializar Terraform
       - name: Terraform Init
         run: terraform init -upgrade
         working-directory: ./terraform
 
-      # Planejar & aplicar
       - name: Terraform Plan
         run: terraform plan -out=tfplan
         working-directory: ./terraform
+
       - name: Terraform Apply
+        env:
+          TF_VAR_consumer_image_tag: ${{ env.IMAGE_TAG_CONSUMER }}
+          TF_VAR_producer_image_tag: ${{ env.IMAGE_TAG_PRODUCER }}
         run: terraform apply -auto-approve tfplan
         working-directory: ./terraform
 
@@ -181,66 +183,3 @@ jobs:
           chmod +x ./terraform_safe_rollback.sh
           ./terraform_safe_rollback.sh
         working-directory: ./terraform
-
-
-  # ===============================
-  # 6️⃣ Docker Build & Push Consumer
-  # ===============================
-  docker-consumer:
-    name: 🐳 Docker Consumer
-    runs-on: ubuntu-latest
-    needs: terraform
-    defaults:
-      run:
-        working-directory: ./consumer
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-      - name: ⚙️ Configurar AWS
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: 🐳 Login ECR
-        uses: aws-actions/amazon-ecr-login@v2
-      - name: 🧱 Build & Push
-        env:
-          ECR_REPOSITORY: finorbit-consumer
-          AWS_REGION: ${{ env.AWS_REGION }}
-          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-        run: |
-          docker build -t $ECR_REPOSITORY:latest .
-          docker tag $ECR_REPOSITORY:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
-          docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
-
-  # ===============================
-  # 7️⃣ Docker Build & Push Producer
-  # ===============================
-  docker-producer:
-    name: 🐳 Docker Producer
-    runs-on: ubuntu-latest
-    needs: terraform
-    defaults:
-      run:
-        working-directory: ./producer
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-      - name: ⚙️ Configurar AWS
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: 🐳 Login ECR
-        uses: aws-actions/amazon-ecr-login@v2
-      - name: 🧱 Build & Push
-        env:
-          ECR_REPOSITORY: finorbit-producer
-          AWS_REGION: ${{ env.AWS_REGION }}
-          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-        run: |
-          docker build -t $ECR_REPOSITORY:latest .
-          docker tag $ECR_REPOSITORY:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
-          docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest

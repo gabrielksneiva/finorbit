@@ -11,6 +11,17 @@ variable "create_rds" {
   default = true
 }
 
+# 🔹 Variáveis novas para as imagens (passadas pelo pipeline)
+variable "consumer_image_tag" {
+  type    = string
+  default = "latest"
+}
+
+variable "producer_image_tag" {
+  type    = string
+  default = "latest"
+}
+
 provider "aws" {
   region = "us-east-1"
 }
@@ -169,21 +180,24 @@ resource "aws_lambda_function" "producer" {
   function_name = "${local.name_prefix}-producer"
   role          = aws_iam_role.lambda_role.arn
   package_type  = "Image"
-  image_uri     = aws_ecr_repository.producer_repo.repository_url
+  image_uri     = "${aws_ecr_repository.producer_repo.repository_url}:${var.producer_image_tag}"
+  source_code_hash = base64sha256(var.producer_image_tag)
 }
 
 resource "aws_lambda_function" "consumer_deposit" {
   function_name = "${local.name_prefix}-consumer-deposit"
   role          = aws_iam_role.lambda_role.arn
   package_type  = "Image"
-  image_uri     = aws_ecr_repository.consumer_repo.repository_url
+  image_uri     = "${aws_ecr_repository.consumer_repo.repository_url}:${var.consumer_image_tag}"
+  source_code_hash = base64sha256(var.consumer_image_tag)
 }
 
 resource "aws_lambda_function" "consumer_withdraw" {
   function_name = "${local.name_prefix}-consumer-withdraw"
   role          = aws_iam_role.lambda_role.arn
   package_type  = "Image"
-  image_uri     = aws_ecr_repository.consumer_repo.repository_url
+  image_uri     = "${aws_ecr_repository.consumer_repo.repository_url}:${var.consumer_image_tag}"
+  source_code_hash = base64sha256(var.consumer_image_tag)
 }
 
 # Event Source Mappings
