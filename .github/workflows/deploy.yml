@@ -14,7 +14,7 @@ env:
 
 jobs:
   # ===============================
-  # 1️⃣ Checkout & Setup
+  # 1️⃣ Setup
   # ===============================
   setup:
     name: 🛠️ Setup
@@ -28,10 +28,10 @@ jobs:
           go-version: '1.25'
 
   # ===============================
-  # 2️⃣ Testes Consumer
+  # 2️⃣ Lint Consumer
   # ===============================
-  test-consumer:
-    name: 🧪 Testes - Consumer
+  lint-consumer:
+    name: 🔍 Lint Consumer
     runs-on: ubuntu-latest
     needs: setup
     defaults:
@@ -40,7 +40,39 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v4
-      - name: 🧪 Rodar testes Consumer
+      - name: 📝 Rodar Lint
+        run: go fmt ./...
+
+  # ===============================
+  # 3️⃣ Lint Producer
+  # ===============================
+  lint-producer:
+    name: 🔍 Lint Producer
+    runs-on: ubuntu-latest
+    needs: setup
+    defaults:
+      run:
+        working-directory: ./producer
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: 📝 Rodar Lint
+        run: go fmt ./...
+
+  # ===============================
+  # 4️⃣ Testes Consumer
+  # ===============================
+  test-consumer:
+    name: 🧪 Testes Consumer
+    runs-on: ubuntu-latest
+    needs: [setup, lint-consumer]
+    defaults:
+      run:
+        working-directory: ./consumer
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: 🧪 Rodar testes
         env:
           GO_ENV: ${{ env.GO_ENV }}
           COVERAGE_THRESHOLD: ${{ env.COVERAGE_THRESHOLD }}
@@ -54,25 +86,26 @@ jobs:
           if [ "$cov_int" -eq 1 ]; then
             echo "❌ Cobertura abaixo de $COVERAGE_THRESHOLD% ($coverage%)"
             exit 1
-          fi
-      - name: 📤 Upload de coverage Consumer
+      - name: 📤 Upload Coverage Consumer
         uses: actions/upload-artifact@v4
         with:
           name: coverage-consumer
           path: coverage.out
 
   # ===============================
+  # 5️⃣ Testes Producer
+  # ===============================
   test-producer:
-    name: 🧪 Testes - Producer
+    name: 🧪 Testes Producer
     runs-on: ubuntu-latest
-    needs: setup
+    needs: [setup, lint-producer]
     defaults:
       run:
         working-directory: ./producer
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v4
-      - name: 🧪 Rodar testes Producer
+      - name: 🧪 Rodar testes
         env:
           GO_ENV: ${{ env.GO_ENV }}
           COVERAGE_THRESHOLD: ${{ env.COVERAGE_THRESHOLD }}
@@ -86,20 +119,22 @@ jobs:
           if [ "$cov_int" -eq 1 ]; then
             echo "❌ Cobertura abaixo de $COVERAGE_THRESHOLD% ($coverage%)"
             exit 1
-          fi
-      - name: 📤 Upload de coverage Producer
+      - name: 📤 Upload Coverage Producer
         uses: actions/upload-artifact@v4
         with:
           name: coverage-producer
           path: coverage.out
 
   # ===============================
-  # 4️⃣ Build & Push Docker
+  # 6️⃣ Docker Build & Push Consumer
   # ===============================
-  docker:
-    name: 🐳 Build & Push Docker
+  docker-consumer:
+    name: 🐳 Docker Consumer
     runs-on: ubuntu-latest
-    needs: [test-consumer, test-producer]
+    needs: test-consumer
+    defaults:
+      run:
+        working-directory: ./consumer
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v4
@@ -109,10 +144,9 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-      - name: 🐳 Login no ECR
+      - name: 🐳 Login ECR
         uses: aws-actions/amazon-ecr-login@v2
-      - name: 🧱 Build e Push Consumer
-        working-directory: ./consumer
+      - name: 🧱 Build & Push
         env:
           ECR_REPOSITORY: finorbit-consumer
           AWS_REGION: ${{ env.AWS_REGION }}
@@ -121,8 +155,29 @@ jobs:
           docker build -t $ECR_REPOSITORY:latest .
           docker tag $ECR_REPOSITORY:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
           docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
-      - name: 🧱 Build e Push Producer
+
+  # ===============================
+  # 7️⃣ Docker Build & Push Producer
+  # ===============================
+  docker-producer:
+    name: 🐳 Docker Producer
+    runs-on: ubuntu-latest
+    needs: test-producer
+    defaults:
+      run:
         working-directory: ./producer
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: ⚙️ Configurar AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: 🐳 Login ECR
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: 🧱 Build & Push
         env:
           ECR_REPOSITORY: finorbit-producer
           AWS_REGION: ${{ env.AWS_REGION }}
@@ -133,12 +188,15 @@ jobs:
           docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
 
   # ===============================
-  # 5️⃣ Terraform Deploy
+  # 8️⃣ Terraform Init
   # ===============================
-  terraform:
-    name: 🪄 Terraform Deploy
+  terraform-init:
+    name: 🪄 Terraform Init
     runs-on: ubuntu-latest
-    needs: docker
+    needs: [docker-consumer, docker-producer]
+    defaults:
+      run:
+        working-directory: ./terraform
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v4
@@ -148,9 +206,47 @@ jobs:
           terraform_version: 1.9.7
       - name: 🪄 Terraform Init
         run: terraform init
+
+  # ===============================
+  # 9️⃣ Terraform Plan
+  # ===============================
+  terraform-plan:
+    name: 🧮 Terraform Plan
+    runs-on: ubuntu-latest
+    needs: terraform-init
+    defaults:
+      run:
+        working-directory: ./terraform
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
       - name: 🧮 Terraform Plan
         run: terraform plan -out=tfplan
-      - name: 🚀 Terraform Apply
+      - name: 📤 Upload tfplan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: tfplan
+
+  # ===============================
+  # 🔟 Terraform Apply
+  # ===============================
+  terraform-apply:
+    name: 🚀 Terraform Apply
+    runs-on: ubuntu-latest
+    needs: terraform-plan
+    defaults:
+      run:
+        working-directory: ./terraform
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: 📥 Download tfplan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: .
+      - name: 🚀 Apply
         run: terraform apply -auto-approve tfplan
       - name: 🌍 Mostrar endpoints da API
         run: terraform output || echo "⚠️ Nenhum output configurado"
