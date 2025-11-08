@@ -78,14 +78,26 @@ jobs:
           COVERAGE_THRESHOLD: ${{ env.COVERAGE_THRESHOLD }}
         run: |
           set -e
+          set -x
+
+          # Organizar dependências
           go mod tidy
+
+          # Rodar testes com cobertura
           go test -v -coverprofile=coverage.out ./...
+
+          # Obter cobertura total
           coverage=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
+          coverage=${coverage:-0}
           echo "Cobertura Consumer: $coverage%"
+
+          # Comparar com o threshold
           cov_int=$(echo "$coverage < $COVERAGE_THRESHOLD" | bc)
           if [ "$cov_int" -eq 1 ]; then
             echo "❌ Cobertura abaixo de $COVERAGE_THRESHOLD% ($coverage%)"
             exit 1
+          fi
+
       - name: 📤 Upload Coverage Consumer
         uses: actions/upload-artifact@v4
         with:
@@ -111,14 +123,20 @@ jobs:
           COVERAGE_THRESHOLD: ${{ env.COVERAGE_THRESHOLD }}
         run: |
           set -e
+          set -x
+
           go mod tidy
           go test -v -coverprofile=coverage.out ./...
+
           coverage=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
+          coverage=${coverage:-0}
           echo "Cobertura Producer: $coverage%"
+
           cov_int=$(echo "$coverage < $COVERAGE_THRESHOLD" | bc)
           if [ "$cov_int" -eq 1 ]; then
             echo "❌ Cobertura abaixo de $COVERAGE_THRESHOLD% ($coverage%)"
             exit 1
+          fi
       - name: 📤 Upload Coverage Producer
         uses: actions/upload-artifact@v4
         with:
