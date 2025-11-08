@@ -533,7 +533,11 @@ resource "aws_cloudwatch_dashboard" "finorbit_dashboard" {
         x = 0, y = 0, width = 12, height = 6,
         properties = {
           metrics = [["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.producer.function_name]]
-          title = "Producer Lambda Errors"
+          region  = "us-east-1"
+          view    = "timeSeries"
+          stacked = false
+          period  = 60
+          title   = "Producer Lambda Errors"
         }
       },
       {
@@ -541,7 +545,11 @@ resource "aws_cloudwatch_dashboard" "finorbit_dashboard" {
         x = 0, y = 7, width = 12, height = 6,
         properties = {
           metrics = [["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.consumer_deposit.function_name]]
-          title = "Consumer Deposit Lambda Errors"
+          region  = "us-east-1"
+          view    = "timeSeries"
+          stacked = false
+          period  = 60
+          title   = "Consumer Deposit Lambda Errors"
         }
       },
       {
@@ -549,7 +557,11 @@ resource "aws_cloudwatch_dashboard" "finorbit_dashboard" {
         x = 0, y = 14, width = 12, height = 6,
         properties = {
           metrics = [["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.consumer_withdraw.function_name]]
-          title = "Consumer Withdraw Lambda Errors"
+          region  = "us-east-1"
+          view    = "timeSeries"
+          stacked = false
+          period  = 60
+          title   = "Consumer Withdraw Lambda Errors"
         }
       },
       {
@@ -557,7 +569,11 @@ resource "aws_cloudwatch_dashboard" "finorbit_dashboard" {
         x = 13, y = 0, width = 12, height = 6,
         properties = {
           metrics = [["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.transactions_deposit_queue.name]]
-          title = "Deposit Queue Length"
+          region  = "us-east-1"
+          view    = "timeSeries"
+          stacked = false
+          period  = 60
+          title   = "Deposit Queue Length"
         }
       },
       {
@@ -565,7 +581,11 @@ resource "aws_cloudwatch_dashboard" "finorbit_dashboard" {
         x = 13, y = 7, width = 12, height = 6,
         properties = {
           metrics = [["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.transactions_withdraw_queue.name]]
-          title = "Withdraw Queue Length"
+          region  = "us-east-1"
+          view    = "timeSeries"
+          stacked = false
+          period  = 60
+          title   = "Withdraw Queue Length"
         }
       },
       {
@@ -573,7 +593,11 @@ resource "aws_cloudwatch_dashboard" "finorbit_dashboard" {
         x = 13, y = 14, width = 12, height = 6,
         properties = {
           metrics = [["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", aws_db_instance.finorbit_db[0].id]]
-          title = "RDS CPU Utilization"
+          region  = "us-east-1"
+          view    = "timeSeries"
+          stacked = false
+          period  = 60
+          title   = "RDS CPU Utilization"
         }
       }
     ]
