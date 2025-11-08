@@ -147,10 +147,12 @@ data "aws_caller_identity" "current" {}
 
 resource "aws_ecr_repository" "consumer_repo" {
   name = "${local.name_prefix}-consumer"
+  force_delete = true
 }
 
 resource "aws_ecr_repository" "producer_repo" {
   name = "${local.name_prefix}-producer"
+  force_delete = true
 }
 
 # Política que permite Lambda puxar imagens
