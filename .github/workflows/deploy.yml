@@ -149,7 +149,7 @@ jobs:
   terraform:
     name: 🌍 Terraform Deploy
     runs-on: ubuntu-latest
-    needs: [docker-consumer, docker-producer]
+    needs: [test-consumer, test-producer]
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
@@ -189,7 +189,7 @@ jobs:
   docker-consumer:
     name: 🐳 Docker Consumer
     runs-on: ubuntu-latest
-    needs: test-consumer
+    needs: terraform
     defaults:
       run:
         working-directory: ./consumer
@@ -220,7 +220,7 @@ jobs:
   docker-producer:
     name: 🐳 Docker Producer
     runs-on: ubuntu-latest
-    needs: test-producer
+    needs: terraform
     defaults:
       run:
         working-directory: ./producer
