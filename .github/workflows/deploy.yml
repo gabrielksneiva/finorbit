@@ -113,12 +113,12 @@ jobs:
 
 
   # ===============================
-  # 9️⃣ Docker Build & Push Consumer
+  # 6️⃣ Docker Build & Push Consumer
   # ===============================
   docker-consumer:
     name: 🐳 Docker Consumer
     runs-on: ubuntu-latest
-    needs: terraform-infra
+    needs: lint-test-consumer
     defaults:
       run:
         working-directory: ./consumer
@@ -141,22 +141,31 @@ jobs:
           ECR_REPOSITORY: finorbit-consumer
           AWS_REGION: ${{ env.AWS_REGION }}
           ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-          COMMIT_HASH: ${{ github.sha }}
         run: |
-          TAG=$(echo $COMMIT_HASH | cut -c1-7)
-          docker build -t $ECR_REPOSITORY:$TAG -t $ECR_REPOSITORY:latest .
-          docker tag $ECR_REPOSITORY:$TAG $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$TAG
-          docker tag $ECR_REPOSITORY:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
-          docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY --all-tags
+          set -e
+          echo "🔍 Verificando se o repositório ECR '$ECR_REPOSITORY' existe..."
+          if ! aws ecr describe-repositories --repository-names $ECR_REPOSITORY >/dev/null 2>&1; then
+            echo "📦 Repositório não encontrado. Criando..."
+            aws ecr create-repository --repository-name $ECR_REPOSITORY >/dev/null
+            echo "✅ Repositório criado com sucesso!"
+          else
+            echo "✅ Repositório já existe."
+          fi
 
+          echo "🚧 Build da imagem Docker..."
+          docker build -t $ECR_REPOSITORY:latest .
+
+          echo "🔗 Tag e push para ECR..."
+          docker tag $ECR_REPOSITORY:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+          docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
 
   # ===============================
-  # 🔟 Docker Build & Push Producer
+  # 7️⃣ Docker Build & Push Producer
   # ===============================
   docker-producer:
     name: 🐳 Docker Producer
     runs-on: ubuntu-latest
-    needs: terraform-infra
+    needs: lint-test-producer
     defaults:
       run:
         working-directory: ./producer
@@ -179,13 +188,23 @@ jobs:
           ECR_REPOSITORY: finorbit-producer
           AWS_REGION: ${{ env.AWS_REGION }}
           ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-          COMMIT_HASH: ${{ github.sha }}
         run: |
-          TAG=$(echo $COMMIT_HASH | cut -c1-7)
-          docker build -t $ECR_REPOSITORY:$TAG -t $ECR_REPOSITORY:latest .
-          docker tag $ECR_REPOSITORY:$TAG $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$TAG
+          set -e
+          echo "🔍 Verificando se o repositório ECR '$ECR_REPOSITORY' existe..."
+          if ! aws ecr describe-repositories --repository-names $ECR_REPOSITORY >/dev/null 2>&1; then
+            echo "📦 Repositório não encontrado. Criando..."
+            aws ecr create-repository --repository-name $ECR_REPOSITORY >/dev/null
+            echo "✅ Repositório criado com sucesso!"
+          else
+            echo "✅ Repositório já existe."
+          fi
+
+          echo "🚧 Build da imagem Docker..."
+          docker build -t $ECR_REPOSITORY:latest .
+
+          echo "🔗 Tag e push para ECR..."
           docker tag $ECR_REPOSITORY:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
-          docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY --all-tags
+          docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
 
 
   # ===============================
