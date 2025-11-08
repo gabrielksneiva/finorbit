@@ -143,8 +143,6 @@ jobs:
           name: coverage-producer
           path: coverage.out
 
-  
-
   # ===============================
   # 8️⃣ Terraform
   # ===============================
