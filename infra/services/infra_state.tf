@@ -2,7 +2,7 @@ data "terraform_remote_state" "infra" {
   backend = "s3"
   config = {
     bucket = "finorbit-terraform-state"
-    key    = "infra/base/terraform.tfstate"
+    key    = "env:/dev/infra/base/terraform.tfstate"
     region = "us-east-1"
   }
 }
