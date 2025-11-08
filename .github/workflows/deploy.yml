@@ -209,6 +209,7 @@ jobs:
   # 8️⃣ Terraform
   # ===============================
   terraform:
+    name: 🌍 Terraform Deploy
     runs-on: ubuntu-latest
     needs: [docker-consumer, docker-producer]
     steps:
