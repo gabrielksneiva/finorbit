@@ -1,5 +1,5 @@
 # Etapa 1 - build da aplicação Go
-FROM golang:1.25 as builder
+FROM golang:1.25 AS builder
 
 # Cria diretório de trabalho
 WORKDIR /app

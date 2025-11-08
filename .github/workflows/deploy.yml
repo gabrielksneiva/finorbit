@@ -6,40 +6,43 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  AWS_REGION: us-east-1
+  TF_IN_AUTOMATION: true
+  COVERAGE_THRESHOLD: 70.0
+  GO_ENV: test
+
 jobs:
-  build-test-deploy:
-    name: 🧪 Build, Test & Deploy FinOrbit
+  # ===============================
+  # 1️⃣ Checkout & Setup
+  # ===============================
+  setup:
+    name: 🛠️ Setup
     runs-on: ubuntu-latest
-
-    env:
-      AWS_REGION: us-east-1
-      TF_IN_AUTOMATION: true
-      COVERAGE_THRESHOLD: 70.0
-      GO_ENV: test   # <-- variável de ambiente para testes
-
     steps:
-      # ===============================
-      # 1️⃣ Checkout do repositório
-      # ===============================
       - name: 📥 Checkout do código
         uses: actions/checkout@v4
-
-      # ===============================
-      # 2️⃣ Configurar Go
-      # ===============================
       - name: 🧰 Configurar Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
 
-      # ===============================
-      # 3️⃣ Testes unitários (Consumer)
-      # ===============================
-      - name: 🧪 Testes - Consumer
-        id: consumer_tests
+  # ===============================
+  # 2️⃣ Testes Consumer
+  # ===============================
+  test-consumer:
+    name: 🧪 Testes - Consumer
+    runs-on: ubuntu-latest
+    needs: setup
+    defaults:
+      run:
         working-directory: ./consumer
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: 🧪 Rodar testes Consumer
         env:
-          GO_ENV: test
+          GO_ENV: ${{ env.GO_ENV }}
           COVERAGE_THRESHOLD: ${{ env.COVERAGE_THRESHOLD }}
         run: |
           set -e
@@ -52,15 +55,26 @@ jobs:
             echo "❌ Cobertura abaixo de $COVERAGE_THRESHOLD% ($coverage%)"
             exit 1
           fi
+      - name: 📤 Upload de coverage Consumer
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-consumer
+          path: coverage.out
 
-      # ===============================
-      # 4️⃣ Testes unitários (Producer)
-      # ===============================
-      - name: 🧪 Testes - Producer
-        id: producer_tests
+  # ===============================
+  test-producer:
+    name: 🧪 Testes - Producer
+    runs-on: ubuntu-latest
+    needs: setup
+    defaults:
+      run:
         working-directory: ./producer
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: 🧪 Rodar testes Producer
         env:
-          GO_ENV: test
+          GO_ENV: ${{ env.GO_ENV }}
           COVERAGE_THRESHOLD: ${{ env.COVERAGE_THRESHOLD }}
         run: |
           set -e
@@ -73,34 +87,30 @@ jobs:
             echo "❌ Cobertura abaixo de $COVERAGE_THRESHOLD% ($coverage%)"
             exit 1
           fi
-
-      # ===============================
-      # 5️⃣ Upload dos relatórios de cobertura
-      # ===============================
-      - name: 📤 Upload de relatórios de cobertura
+      - name: 📤 Upload de coverage Producer
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-reports
-          path: |
-            consumer/coverage.out
-            producer/coverage.out
+          name: coverage-producer
+          path: coverage.out
 
-      # ===============================
-      # 6️⃣ Configurar AWS
-      # ===============================
-      - name: ⚙️ Configurar credenciais AWS
+  # ===============================
+  # 4️⃣ Build & Push Docker
+  # ===============================
+  docker:
+    name: 🐳 Build & Push Docker
+    runs-on: ubuntu-latest
+    needs: [test-consumer, test-producer]
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: ⚙️ Configurar AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-
       - name: 🐳 Login no ECR
         uses: aws-actions/amazon-ecr-login@v2
-
-      # ===============================
-      # 7️⃣ Build e Push das imagens Docker
-      # ===============================
       - name: 🧱 Build e Push Consumer
         working-directory: ./consumer
         env:
@@ -108,11 +118,9 @@ jobs:
           AWS_REGION: ${{ env.AWS_REGION }}
           ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
         run: |
-          set -e
           docker build -t $ECR_REPOSITORY:latest .
           docker tag $ECR_REPOSITORY:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
           docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
-
       - name: 🧱 Build e Push Producer
         working-directory: ./producer
         env:
@@ -120,31 +128,29 @@ jobs:
           AWS_REGION: ${{ env.AWS_REGION }}
           ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
         run: |
-          set -e
           docker build -t $ECR_REPOSITORY:latest .
           docker tag $ECR_REPOSITORY:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
           docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
 
-      # ===============================
-      # 8️⃣ Instalar e aplicar Terraform
-      # ===============================
+  # ===============================
+  # 5️⃣ Terraform Deploy
+  # ===============================
+  terraform:
+    name: 🪄 Terraform Deploy
+    runs-on: ubuntu-latest
+    needs: docker
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
       - name: 🧩 Instalar Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.7
-
       - name: 🪄 Terraform Init
         run: terraform init
-
       - name: 🧮 Terraform Plan
         run: terraform plan -out=tfplan
-
-      - name: 🚀 Terraform Apply (auto)
+      - name: 🚀 Terraform Apply
         run: terraform apply -auto-approve tfplan
-
-      # ===============================
-      # 🔟 Outputs finais
-      # ===============================
       - name: 🌍 Mostrar endpoints da API
-        run: |
-          terraform output || echo "⚠️ Nenhum output configurado"
+        run: terraform output || echo "⚠️ Nenhum output configurado"

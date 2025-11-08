@@ -31,4 +31,22 @@ go.work.sum
 # .idea/
 # .vscode/
 
-.terraform/*
+# ===============================
+# Terraform - arquivos gerados
+# ===============================
+
+# Estado local do Terraform
+*.tfstate
+*.tfstate.*
+
+# Backups automáticos do Terraform
+*.tfbackup
+
+# Planos gerados
+*.tfplan
+
+# Diretório de plugins e cache
+.terraform/
+
+# Logs (opcional)
+terraform.log
