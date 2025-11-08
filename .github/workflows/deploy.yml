@@ -38,8 +38,10 @@ jobs:
       run:
         working-directory: ./consumer
     steps:
-      - uses: actions/checkout@v4
-      - run: go fmt ./...
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: 📝 Rodar Lint
+        run: go fmt ./...
 
   # ===============================
   # 3️⃣ Lint Producer
@@ -52,8 +54,10 @@ jobs:
       run:
         working-directory: ./producer
     steps:
-      - uses: actions/checkout@v4
-      - run: go fmt ./...
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: 📝 Rodar Lint
+        run: go fmt ./...
 
   # ===============================
   # 4️⃣ Testes Consumer
@@ -66,20 +70,36 @@ jobs:
       run:
         working-directory: ./consumer
     steps:
-      - uses: actions/checkout@v4
-      - run: |
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: 🧪 Rodar testes
+        env:
+          GO_ENV: ${{ env.GO_ENV }}
+          COVERAGE_THRESHOLD: ${{ env.COVERAGE_THRESHOLD }}
+        run: |
           set -e
           set -x
+
+          # Organizar dependências
           go mod tidy
+
+          # Rodar testes com cobertura
           go test -v -coverprofile=coverage.out ./...
+
+          # Obter cobertura total
           coverage=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
           coverage=${coverage:-0}
           echo "Cobertura Consumer: $coverage%"
+
+          # Comparar com o threshold
           cov_int=$(echo "$coverage < $COVERAGE_THRESHOLD" | bc)
           if [ "$cov_int" -eq 1 ]; then
             echo "❌ Cobertura abaixo de $COVERAGE_THRESHOLD% ($coverage%)"
             exit 1
-      - uses: actions/upload-artifact@v4
+          fi
+
+      - name: 📤 Upload Coverage Consumer
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-consumer
           path: coverage.out
@@ -95,20 +115,30 @@ jobs:
       run:
         working-directory: ./producer
     steps:
-      - uses: actions/checkout@v4
-      - run: |
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: 🧪 Rodar testes
+        env:
+          GO_ENV: ${{ env.GO_ENV }}
+          COVERAGE_THRESHOLD: ${{ env.COVERAGE_THRESHOLD }}
+        run: |
           set -e
           set -x
+
           go mod tidy
           go test -v -coverprofile=coverage.out ./...
+
           coverage=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
           coverage=${coverage:-0}
           echo "Cobertura Producer: $coverage%"
+
           cov_int=$(echo "$coverage < $COVERAGE_THRESHOLD" | bc)
           if [ "$cov_int" -eq 1 ]; then
             echo "❌ Cobertura abaixo de $COVERAGE_THRESHOLD% ($coverage%)"
             exit 1
-      - uses: actions/upload-artifact@v4
+          fi
+      - name: 📤 Upload Coverage Producer
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-producer
           path: coverage.out
@@ -124,17 +154,25 @@ jobs:
       run:
         working-directory: ./consumer
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: ⚙️ Configurar AWS
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-      - uses: aws-actions/amazon-ecr-login@v2
-      - run: |
-          docker build -t finorbit-consumer:latest .
-          docker tag finorbit-consumer:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/finorbit-consumer:latest
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/finorbit-consumer:latest
+      - name: 🐳 Login ECR
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: 🧱 Build & Push
+        env:
+          ECR_REPOSITORY: finorbit-consumer
+          AWS_REGION: ${{ env.AWS_REGION }}
+          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        run: |
+          docker build -t $ECR_REPOSITORY:latest .
+          docker tag $ECR_REPOSITORY:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+          docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
 
   # ===============================
   # 7️⃣ Docker Build & Push Producer
@@ -147,17 +185,25 @@ jobs:
       run:
         working-directory: ./producer
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: ⚙️ Configurar AWS
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-      - uses: aws-actions/amazon-ecr-login@v2
-      - run: |
-          docker build -t finorbit-producer:latest .
-          docker tag finorbit-producer:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/finorbit-producer:latest
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/finorbit-producer:latest
+      - name: 🐳 Login ECR
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: 🧱 Build & Push
+        env:
+          ECR_REPOSITORY: finorbit-producer
+          AWS_REGION: ${{ env.AWS_REGION }}
+          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        run: |
+          docker build -t $ECR_REPOSITORY:latest .
+          docker tag $ECR_REPOSITORY:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+          docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
 
   # ===============================
   # 8️⃣ Terraform Init
