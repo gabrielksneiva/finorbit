@@ -236,6 +236,6 @@ jobs:
         if: failure()
         run: |
           echo "❌ Terraform apply falhou! Iniciando rollback seguro..."
-          chmod +x finorbit/terraform/terraform_safe_rollback.sh
-          finorbit/terraform/terraform_safe_rollback.sh
+          chmod +x ./terraform_safe_rollback.sh
+          ./terraform_safe_rollback.sh
         working-directory: ./terraform

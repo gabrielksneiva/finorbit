@@ -263,7 +263,7 @@ resource "aws_lambda_function" "consumer_deposit" {
   environment {
     variables = {
       QUEUE_URL = aws_sqs_queue.transactions_deposit_queue.url
-      DB_HOST   = aws_db_instance.finorbit_db.address
+      DB_HOST   = aws_db_instance.finorbit_db[0].address
       DB_USER   = "finorbit_admin"
       DB_PASS   = "Finorbit123!"
       DB_NAME   = "finorbit"
@@ -288,7 +288,7 @@ resource "aws_lambda_function" "consumer_withdraw" {
   environment {
     variables = {
       QUEUE_URL = aws_sqs_queue.transactions_withdraw_queue.url
-      DB_HOST   = aws_db_instance.finorbit_db.address
+      DB_HOST   = aws_db_instance.finorbit_db[0].address
       DB_USER   = "finorbit_admin"
       DB_PASS   = "Finorbit123!"
       DB_NAME   = "finorbit"
@@ -508,7 +508,7 @@ resource "aws_cloudwatch_metric_alarm" "rds_high_cpu" {
   threshold           = 70
   alarm_actions       = [aws_sns_topic.alerts.arn]
   dimensions = {
-    DBInstanceIdentifier = aws_db_instance.finorbit_db.id
+    DBInstanceIdentifier = aws_db_instance.finorbit_db[0].id
   }
 }
 
@@ -516,7 +516,7 @@ resource "aws_cloudwatch_metric_alarm" "rds_high_cpu" {
 # 📈 Dashboard CloudWatch
 # =======================
 resource "aws_cloudwatch_dashboard" "finorbit_dashboard" {
-  dashboard_name = "${local.name_prefix}-dashboard"
+  dashboard_name = "finorbit-dashboard"
   dashboard_body = jsonencode({
     widgets = [
       {
@@ -563,7 +563,7 @@ resource "aws_cloudwatch_dashboard" "finorbit_dashboard" {
         type = "metric",
         x = 13, y = 14, width = 12, height = 6,
         properties = {
-          metrics = [["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", aws_db_instance.finorbit_db.id]]
+          metrics = [["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", aws_db_instance.finorbit_db[0].id]]
           title = "RDS CPU Utilization"
         }
       }
@@ -579,7 +579,7 @@ output "api_url" {
 }
 
 output "db_endpoint" {
-  value = aws_db_instance.finorbit_db.address
+  value = aws_db_instance.finorbit_db[0].address
 }
 
 output "deposit_queue_url" {
