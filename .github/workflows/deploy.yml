@@ -217,8 +217,13 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.7
-      - run: terraform init
+      - run: terraform init -upgrade
         working-directory: ./terraform
+      - name: Upload .terraform
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-cache
+          path: ./terraform/.terraform
 
   # ===============================
   # 9️⃣ Terraform Plan
@@ -232,6 +237,11 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.7
+      - name: Download Terraform Cache
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-cache
+          path: ./terraform/.terraform
       - run: terraform plan -out=tfplan
         working-directory: ./terraform
       - uses: actions/upload-artifact@v4
@@ -256,6 +266,4 @@ jobs:
           name: tfplan
           path: ./terraform
       - run: terraform apply -auto-approve tfplan
-        working-directory: ./terraform
-      - run: terraform output || echo "⚠️ Nenhum output configurado"
         working-directory: ./terraform
