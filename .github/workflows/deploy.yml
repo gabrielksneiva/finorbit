@@ -222,9 +222,22 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.7
+
+      # Inicializar Terraform
       - name: Terraform Init
         run: terraform init -upgrade
         working-directory: ./terraform
+
+      # Opcional: Destruir recursos antigos em dev/test
+      - name: Terraform Safe Destroy (Dev/Test)
+        if: env.ENV != 'prod'
+        run: |
+          echo "⚠️ Ambiente não-prod: destruindo recursos antigos antes do apply..."
+          terraform plan -destroy -out=tfdestroy
+          terraform apply -auto-approve tfdestroy
+        working-directory: ./terraform
+
+      # Planejar & aplicar
       - name: Terraform Plan
         run: terraform plan -out=tfplan
         working-directory: ./terraform

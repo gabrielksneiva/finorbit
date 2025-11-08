@@ -15,12 +15,8 @@ provider "aws" {
   region = "us-east-1"
 }
 
-resource "random_id" "suffix" {
-  byte_length = 2
-}
-
 locals {
-  name_prefix = "finorbit-${var.env}-${random_id.suffix.hex}"
+  name_prefix = "finorbit-${var.env}"
 }
 
 # =======================
@@ -85,16 +81,16 @@ resource "aws_sqs_queue" "transactions_withdraw_queue" {
 
 # SNS → SQS subscriptions
 resource "aws_sns_topic_subscription" "sns_to_deposit_sqs" {
-  topic_arn = aws_sns_topic.transactions.arn
-  protocol  = "sqs"
-  endpoint  = aws_sqs_queue.transactions_deposit_queue.arn
+  topic_arn    = aws_sns_topic.transactions.arn
+  protocol     = "sqs"
+  endpoint     = aws_sqs_queue.transactions_deposit_queue.arn
   filter_policy = jsonencode({ type = ["deposit"] })
 }
 
 resource "aws_sns_topic_subscription" "sns_to_withdraw_sqs" {
-  topic_arn = aws_sns_topic.transactions.arn
-  protocol  = "sqs"
-  endpoint  = aws_sqs_queue.transactions_withdraw_queue.arn
+  topic_arn    = aws_sns_topic.transactions.arn
+  protocol     = "sqs"
+  endpoint     = aws_sqs_queue.transactions_withdraw_queue.arn
   filter_policy = jsonencode({ type = ["withdraw"] })
 }
 
