@@ -1,0 +1,150 @@
+name: FinOrbit CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test-deploy:
+    name: 🧪 Build, Test & Deploy FinOrbit
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: us-east-1
+      TF_IN_AUTOMATION: true
+      COVERAGE_THRESHOLD: 70.0
+      GO_ENV: test   # <-- variável de ambiente para testes
+
+    steps:
+      # ===============================
+      # 1️⃣ Checkout do repositório
+      # ===============================
+      - name: 📥 Checkout do código
+        uses: actions/checkout@v4
+
+      # ===============================
+      # 2️⃣ Configurar Go
+      # ===============================
+      - name: 🧰 Configurar Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      # ===============================
+      # 3️⃣ Testes unitários (Consumer)
+      # ===============================
+      - name: 🧪 Testes - Consumer
+        id: consumer_tests
+        working-directory: ./consumer
+        env:
+          GO_ENV: test
+          COVERAGE_THRESHOLD: ${{ env.COVERAGE_THRESHOLD }}
+        run: |
+          set -e
+          go mod tidy
+          go test -v -coverprofile=coverage.out ./...
+          coverage=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
+          echo "Cobertura Consumer: $coverage%"
+          cov_int=$(echo "$coverage < $COVERAGE_THRESHOLD" | bc)
+          if [ "$cov_int" -eq 1 ]; then
+            echo "❌ Cobertura abaixo de $COVERAGE_THRESHOLD% ($coverage%)"
+            exit 1
+          fi
+
+      # ===============================
+      # 4️⃣ Testes unitários (Producer)
+      # ===============================
+      - name: 🧪 Testes - Producer
+        id: producer_tests
+        working-directory: ./producer
+        env:
+          GO_ENV: test
+          COVERAGE_THRESHOLD: ${{ env.COVERAGE_THRESHOLD }}
+        run: |
+          set -e
+          go mod tidy
+          go test -v -coverprofile=coverage.out ./...
+          coverage=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
+          echo "Cobertura Producer: $coverage%"
+          cov_int=$(echo "$coverage < $COVERAGE_THRESHOLD" | bc)
+          if [ "$cov_int" -eq 1 ]; then
+            echo "❌ Cobertura abaixo de $COVERAGE_THRESHOLD% ($coverage%)"
+            exit 1
+          fi
+
+      # ===============================
+      # 5️⃣ Upload dos relatórios de cobertura
+      # ===============================
+      - name: 📤 Upload de relatórios de cobertura
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            consumer/coverage.out
+            producer/coverage.out
+
+      # ===============================
+      # 6️⃣ Configurar AWS
+      # ===============================
+      - name: ⚙️ Configurar credenciais AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 🐳 Login no ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ===============================
+      # 7️⃣ Build e Push das imagens Docker
+      # ===============================
+      - name: 🧱 Build e Push Consumer
+        working-directory: ./consumer
+        env:
+          ECR_REPOSITORY: finorbit-consumer
+          AWS_REGION: ${{ env.AWS_REGION }}
+          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        run: |
+          set -e
+          docker build -t $ECR_REPOSITORY:latest .
+          docker tag $ECR_REPOSITORY:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+          docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+
+      - name: 🧱 Build e Push Producer
+        working-directory: ./producer
+        env:
+          ECR_REPOSITORY: finorbit-producer
+          AWS_REGION: ${{ env.AWS_REGION }}
+          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        run: |
+          set -e
+          docker build -t $ECR_REPOSITORY:latest .
+          docker tag $ECR_REPOSITORY:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+          docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+
+      # ===============================
+      # 8️⃣ Instalar e aplicar Terraform
+      # ===============================
+      - name: 🧩 Instalar Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.7
+
+      - name: 🪄 Terraform Init
+        run: terraform init
+
+      - name: 🧮 Terraform Plan
+        run: terraform plan -out=tfplan
+
+      - name: 🚀 Terraform Apply (auto)
+        run: terraform apply -auto-approve tfplan
+
+      # ===============================
+      # 🔟 Outputs finais
+      # ===============================
+      - name: 🌍 Mostrar endpoints da API
+        run: |
+          terraform output || echo "⚠️ Nenhum output configurado"
