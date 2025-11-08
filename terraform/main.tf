@@ -404,7 +404,7 @@ resource "aws_db_instance" "finorbit_db" {
   db_name             = "finorbit"
   publicly_accessible = true
   skip_final_snapshot = true
-  vpc_security_group_ids = [aws_security_group.finorbit_db_sg.id]
+  vpc_security_group_ids = [aws_security_group.finorbit_db_sg[0].id]
 
   tags = {
     Name = "finorbit-db"
