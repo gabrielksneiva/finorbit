@@ -5,8 +5,6 @@ locals {
 variable "lambda_role_arn" {}
 variable "repositories" {}
 variable "queues" {}
-variable "producer_image_tag" {}
-variable "consumer_image_tag" {}
 
 # =======================
 # 🧩 Lambdas
