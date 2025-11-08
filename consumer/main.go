@@ -14,9 +14,9 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// ===============================
-// 💡 Estrutura da transação
-// ===============================
+// =========================================================
+// 💡 Estrutura de uma transação
+// =========================================================
 type Transaction struct {
 	UserID    string          `json:"user_id"`
 	Amount    decimal.Decimal `json:"amount"`
@@ -26,10 +26,10 @@ type Transaction struct {
 
 var db *sql.DB
 
-// ===============================
-// 🔧 Inicialização global (executa 1x por Lambda container)
-// ===============================
-func init() {
+// =========================================================
+// 🔧 Inicialização global — executa 1x por container Lambda
+// =========================================================
+func initializeDB() {
 	if os.Getenv("GO_ENV") == "test" {
 		log.Println("🧪 Ambiente de teste detectado — conexão RDS ignorada.")
 		return
@@ -46,35 +46,32 @@ func init() {
 	var err error
 	db, err = sql.Open("postgres", connStr)
 	if err != nil {
-		log.Fatalf("❌ Erro ao conectar ao banco: %v", err)
+		log.Fatalf("❌ Erro ao inicializar conexão: %v", err)
 	}
 
 	// Testa a conexão
 	if err := db.Ping(); err != nil {
-		log.Fatalf("❌ Falha ao conectar ao RDS: %v", err)
+		log.Fatalf("❌ Falha ao conectar ao banco: %v", err)
 	}
 
 	log.Println("✅ Conexão com RDS estabelecida com sucesso.")
 
-	// Verifica e cria tabela se necessário
 	ensureTableExists()
 }
 
-// ===============================
-// 🏗️ Criação da tabela, se não existir
-// ===============================
+// =========================================================
+// 🏗️ Garante que a tabela exista antes de inserir
+// =========================================================
 func ensureTableExists() {
-	const checkQuery = `
+	checkQuery := `
 	SELECT EXISTS (
-		SELECT FROM information_schema.tables 
-		WHERE table_schema = 'public' 
-		AND table_name = 'transactions'
+		SELECT FROM information_schema.tables
+		WHERE table_schema = 'public' AND table_name = 'transactions'
 	);
 	`
 
 	var exists bool
-	err := db.QueryRow(checkQuery).Scan(&exists)
-	if err != nil {
+	if err := db.QueryRow(checkQuery).Scan(&exists); err != nil {
 		log.Fatalf("❌ Erro ao verificar existência da tabela: %v", err)
 	}
 
@@ -95,21 +92,21 @@ func ensureTableExists() {
 	);
 	`
 
-	_, err = db.Exec(createQuery)
-	if err != nil {
+	if _, err := db.Exec(createQuery); err != nil {
 		log.Fatalf("❌ Erro ao criar tabela 'transactions': %v", err)
 	}
 
 	log.Println("✅ Tabela 'transactions' criada com sucesso!")
 }
 
-// ===============================
-// 📬 Processamento das mensagens
-// ===============================
+// =========================================================
+// 📬 Função Lambda — processa mensagens SQS (via SNS)
+// =========================================================
 func handler(ctx context.Context, sqsEvent events.SQSEvent) error {
-	log.Println("🚀 Iniciando processamento de mensagens SQS...")
+	log.Println("🚀 Iniciando processamento de mensagens...")
 
 	for _, record := range sqsEvent.Records {
+		// As mensagens vêm do SNS → SQS
 		var snsEnvelope events.SNSEntity
 		if err := json.Unmarshal([]byte(record.Body), &snsEnvelope); err != nil {
 			log.Printf("⚠️ Erro ao decodificar envelope SNS: %v", err)
@@ -123,27 +120,35 @@ func handler(ctx context.Context, sqsEvent events.SQSEvent) error {
 		}
 
 		_, err := db.Exec(
-			`INSERT INTO transactions (user_id, amount, type, timestamp) VALUES ($1, $2, $3, $4)`,
+			`INSERT INTO transactions (user_id, amount, type, timestamp)
+			 VALUES ($1, $2, $3, $4)`,
 			tx.UserID, tx.Amount.String(), tx.Type, tx.Timestamp,
 		)
 		if err != nil {
-			log.Printf("❌ Erro ao inserir transação: %v", err)
+			log.Printf("❌ Erro ao salvar transação no banco: %v", err)
 			continue
 		}
 
-		log.Printf("✅ Transação salva com sucesso: user=%s | tipo=%s | valor=%s", tx.UserID, tx.Type, tx.Amount.String())
+		log.Printf("✅ Transação salva com sucesso | user=%s | tipo=%s | valor=%s",
+			tx.UserID, tx.Type, tx.Amount.String())
 	}
 
 	return nil
 }
 
-// ===============================
-// 🚀 Entry point Lambda
-// ===============================
+// =========================================================
+// 🚀 Ponto de entrada da Lambda
+// =========================================================
 func main() {
 	if os.Getenv("GO_ENV") == "test" {
 		log.Println("🧪 Modo de teste — Lambda não será iniciado.")
 		return
+	}
+
+	// segurança extra caso init não tenha rodado (containers frios)
+	if db == nil {
+		log.Println("⚠️ Conexão ausente — reinicializando...")
+		initializeDB()
 	}
 
 	ensureTableExists()

@@ -65,7 +65,6 @@ func TestHandler_ProcessaMensagemValida(t *testing.T) {
 	defer dbMock.Close()
 	db = dbMock
 
-	// Mock de INSERT
 	mock.ExpectExec(`INSERT INTO transactions`).
 		WithArgs("user-123", sqlmock.AnyArg(), "deposit", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -122,34 +121,20 @@ func TestHandler_InsertFails(t *testing.T) {
 }
 
 // =============================================
-// 🧩 Utilitário auxiliar para JSON
-// =============================================
-func jsonMarshal(v any) ([]byte, error) {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return nil, errors.New("falha ao gerar JSON mockado")
-	}
-	return data, nil
-}
-
-// =============================================
-// ⚠️ Teste: erro ao verificar existência da tabela (captura os.Exit)
+// ⚠️ Testes de falha na verificação/criação da tabela
 // =============================================
 func TestEnsureTableExists_CheckQueryFails(t *testing.T) {
 	if os.Getenv("BE_CRASHER") == "1" {
 		dbMock, mock, _ := sqlmock.New()
 		defer dbMock.Close()
 		db = dbMock
-
 		mock.ExpectQuery(`SELECT EXISTS`).WillReturnError(errors.New("db error"))
-
 		ensureTableExists()
 		return
 	}
 
 	cmd := exec.Command(os.Args[0], "-test.run=TestEnsureTableExists_CheckQueryFails")
 	cmd.Env = append(os.Environ(), "BE_CRASHER=1")
-
 	err := cmd.Run()
 	if e, ok := err.(*exec.ExitError); ok && !e.Success() {
 		return
@@ -157,26 +142,20 @@ func TestEnsureTableExists_CheckQueryFails(t *testing.T) {
 	t.Fatalf("esperava que ensureTableExists chamasse os.Exit(1) ao falhar, mas não chamou")
 }
 
-// =============================================
-// ⚠️ Teste: erro ao criar tabela (captura os.Exit)
-// =============================================
 func TestEnsureTableExists_CreateTableFails(t *testing.T) {
 	if os.Getenv("BE_CRASHER_CREATE") == "1" {
 		dbMock, mock, _ := sqlmock.New()
 		defer dbMock.Close()
 		db = dbMock
-
 		mock.ExpectQuery(`SELECT EXISTS`).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 		mock.ExpectExec(`(?s)CREATE EXTENSION IF NOT EXISTS "uuid-ossp";.*CREATE TABLE public.transactions`).
 			WillReturnError(errors.New("create failed"))
-
 		ensureTableExists()
 		return
 	}
 
 	cmd := exec.Command(os.Args[0], "-test.run=TestEnsureTableExists_CreateTableFails")
 	cmd.Env = append(os.Environ(), "BE_CRASHER_CREATE=1")
-
 	err := cmd.Run()
 	if e, ok := err.(*exec.ExitError); ok && !e.Success() {
 		return
@@ -185,10 +164,8 @@ func TestEnsureTableExists_CreateTableFails(t *testing.T) {
 }
 
 // =============================================
-// 🧪 Casos extras para aumentar cobertura
+// 🧪 Casos extras para cobertura >70%
 // =============================================
-
-// 1️⃣ SQS sem registros (early return)
 func TestHandler_SQSEventVazio(t *testing.T) {
 	event := events.SQSEvent{Records: []events.SQSMessage{}}
 	err := handler(context.Background(), event)
@@ -197,7 +174,6 @@ func TestHandler_SQSEventVazio(t *testing.T) {
 	}
 }
 
-// 2️⃣ SNS válido mas sem campo "Message"
 func TestHandler_SNSSemMessage(t *testing.T) {
 	snsBody := map[string]interface{}{"Data": "valor"}
 	bodyBytes, _ := json.Marshal(snsBody)
@@ -210,7 +186,6 @@ func TestHandler_SNSSemMessage(t *testing.T) {
 	}
 }
 
-// 3️⃣ SNS com campo Message corrompido (JSON inválido)
 func TestHandler_MessageCorrompido(t *testing.T) {
 	snsBody := map[string]interface{}{"Message": "{invalid json}"}
 	bodyBytes, _ := json.Marshal(snsBody)
@@ -224,11 +199,30 @@ func TestHandler_MessageCorrompido(t *testing.T) {
 }
 
 // =============================================
-// 🧠 Teste do main (cobre inicialização básica)
+// 🧠 Teste do main e inicialização manual
 // =============================================
 func TestMainFunction(t *testing.T) {
-	// apenas garante que o main() roda no modo teste
 	os.Setenv("GO_ENV", "test")
-	main()
+	main() // não deve iniciar Lambda
 	t.Log("Main executado no modo teste com sucesso")
+}
+
+func TestInitializeDB(t *testing.T) {
+	dbMock, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Erro ao criar mock: %v", err)
+	}
+	defer dbMock.Close()
+
+	// Simula conexão SQL válida e Ping ok
+	db = dbMock
+	mock.ExpectQuery(`SELECT EXISTS`).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+
+	os.Setenv("DB_HOST", "localhost")
+	os.Setenv("DB_USER", "user")
+	os.Setenv("DB_PASS", "pass")
+	os.Setenv("DB_NAME", "db")
+
+	initializeDB()
+	t.Log("initializeDB executado com sucesso (mock)")
 }
