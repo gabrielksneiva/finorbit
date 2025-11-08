@@ -359,8 +359,13 @@ data "aws_vpc" "default" {
   default = true
 }
 
+variable "create_rds" {
+  type    = bool
+  default = true
+}
+
 resource "aws_security_group" "finorbit_db_sg" {
-  name        = "${local.name_prefix}-db-sg"
+  name        = "finorbit-db-sg"
   description = "Permite acesso ao RDS PostgreSQL"
   vpc_id      = data.aws_vpc.default.id
 
@@ -380,7 +385,8 @@ resource "aws_security_group" "finorbit_db_sg" {
 }
 
 resource "aws_db_instance" "finorbit_db" {
-  identifier          = "${local.name_prefix}-db"
+  count = var.create_rds ? 1 : 0
+  identifier          = "finorbit-db"
   engine              = "postgres"
   instance_class      = "db.t3.micro"
   allocated_storage   = 20
