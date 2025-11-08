@@ -25,18 +25,18 @@ provider "aws" {
 # 🪧 BLOCO 2 — SNS Topic
 # =======================
 resource "aws_sns_topic" "transactions" {
-  name = "${local.name_prefix}-transactions"
+  name = "finorbit-transactions"
 }
 
 # =======================
 # 📬 BLOCO 3 — SQS Queues
 # =======================
 resource "aws_sqs_queue" "transactions_deposit_queue" {
-  name = "${local.name_prefix}-transactions-deposit-queue"
+  name = "finorbit-transactions-deposit-queue"
 }
 
 resource "aws_sqs_queue" "transactions_withdraw_queue" {
-  name = "${local.name_prefix}-transactions-withdraw-queue"
+  name = "finorbit-transactions-withdraw-queue"
 }
 
 # =======================
@@ -90,37 +90,27 @@ resource "aws_sqs_queue_policy" "allow_sns_withdraw" {
 # =======================
 # 🧠 BLOCO 5 — IAM Role para Lambdas
 # =======================
-resource "aws_iam_role" "lambda_role" {
-  name = "${local.name_prefix}-lambda-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = { Service = "lambda.amazonaws.com" }
-      Action = "sts:AssumeRole"
-    }]
-  })
+data "aws_iam_role" "existing_lambda_role" {
+  name = "finorbit-lambda-role"
 }
-
-# Permissões básicas e acesso
+# ...existing code...
 resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
-  role       = aws_iam_role.lambda_role.name
+  role       = data.aws_iam_role.existing_lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_sqs_access" {
-  role       = aws_iam_role.lambda_role.name
+  role       = data.aws_iam_role.existing_lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSQSFullAccess"
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_ecr_access" {
-  role       = aws_iam_role.lambda_role.name
+  role       = data.aws_iam_role.existing_lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_rds_access" {
-  role       = aws_iam_role.lambda_role.name
+  role       = data.aws_iam_role.existing_lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonRDSFullAccess"
 }
 
@@ -133,7 +123,7 @@ resource "aws_sns_topic_policy" "allow_lambda_publish" {
     Statement = [{
       Sid       = "AllowLambdaPublish"
       Effect    = "Allow"
-      Principal = { AWS = aws_iam_role.lambda_role.arn }
+      Principal = { AWS = data.aws_iam_role.existing_lambda_role.arn }
       Action    = "sns:Publish"
       Resource  = aws_sns_topic.transactions.arn
     }]
@@ -235,8 +225,8 @@ data "aws_ecr_image" "producer_latest" {
 }
 
 resource "aws_lambda_function" "producer" {
-  function_name = "${local.name_prefix}-producer"
-  role          = aws_iam_role.lambda_role.arn
+  function_name = "finorbit-producer"
+  role          = data.aws_iam_role.existing_lambda_role.arn
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.producer_repo.repository_url}@${data.aws_ecr_image.producer_latest.image_digest}"
   timeout       = 10
@@ -258,8 +248,8 @@ data "aws_ecr_image" "consumer_latest" {
 }
 
 resource "aws_lambda_function" "consumer_deposit" {
-  function_name = "${local.name_prefix}-consumer-deposit"
-  role          = aws_iam_role.lambda_role.arn
+  function_name = "finorbit-consumer-deposit"
+  role          = data.aws_iam_role.existing_lambda_role.arn
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.consumer_repo.repository_url}@${data.aws_ecr_image.consumer_latest.image_digest}"
   timeout       = 10
@@ -283,8 +273,8 @@ resource "aws_lambda_function" "consumer_deposit" {
 }
 
 resource "aws_lambda_function" "consumer_withdraw" {
-  function_name = "${local.name_prefix}-consumer-withdraw"
-  role          = aws_iam_role.lambda_role.arn
+  function_name = "finorbit-consumer-withdraw"
+  role          = data.aws_iam_role.existing_lambda_role.arn
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.consumer_repo.repository_url}@${data.aws_ecr_image.consumer_latest.image_digest}"
   timeout       = 10
@@ -328,7 +318,7 @@ resource "aws_lambda_event_source_mapping" "withdraw_trigger" {
 # 🌐 BLOCO 9 — API Gateway
 # =======================
 resource "aws_apigatewayv2_api" "finorbit_api" {
-  name          = "${local.name_prefix}-api"
+  name          = "finorbit-api"
   protocol_type = "HTTP"
 }
 
@@ -372,25 +362,10 @@ variable "create_rds" {
   default = true
 }
 
-resource "aws_security_group" "finorbit_db_sg" {
-  count = var.create_rds ? 1 : 0
-  name        = "finorbit-db-sg"
-  description = "Permite acesso ao RDS PostgreSQL"
-  vpc_id      = data.aws_vpc.default.id
-
-  ingress {
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # apenas teste
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+data "aws_security_group" "finorbit_db_sg" {
+  count  = var.create_rds ? 1 : 0
+  name   = "finorbit-db-sg"
+  vpc_id = data.aws_vpc.default.id
 }
 
 resource "aws_db_instance" "finorbit_db" {
@@ -404,7 +379,7 @@ resource "aws_db_instance" "finorbit_db" {
   db_name             = "finorbit"
   publicly_accessible = true
   skip_final_snapshot = true
-  vpc_security_group_ids = [aws_security_group.finorbit_db_sg[0].id]
+  vpc_security_group_ids = var.create_rds ? [data.aws_security_group.finorbit_db_sg[0].id] : []
 
   tags = {
     Name = "finorbit-db"
@@ -418,7 +393,7 @@ resource "aws_db_instance" "finorbit_db" {
 
 # 🔔 SNS Topic para alertas
 resource "aws_sns_topic" "alerts" {
-  name = "${local.name_prefix}-alerts"
+  name = "finorbit-alerts"
 }
 
 # =======================
@@ -427,7 +402,7 @@ resource "aws_sns_topic" "alerts" {
 
 # Lambda Errors - Producer
 resource "aws_cloudwatch_metric_alarm" "producer_lambda_errors" {
-  alarm_name          = "${local.name_prefix}-producer-lambda-errors"
+  alarm_name          = "finorbit-producer-lambda-errors"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "Errors"
@@ -443,7 +418,7 @@ resource "aws_cloudwatch_metric_alarm" "producer_lambda_errors" {
 
 # Lambda Errors - Consumer Deposit
 resource "aws_cloudwatch_metric_alarm" "consumer_deposit_lambda_errors" {
-  alarm_name          = "${local.name_prefix}-consumer-deposit-lambda-errors"
+  alarm_name          = "finorbit-consumer-deposit-lambda-errors"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "Errors"
@@ -459,7 +434,7 @@ resource "aws_cloudwatch_metric_alarm" "consumer_deposit_lambda_errors" {
 
 # Lambda Errors - Consumer Withdraw
 resource "aws_cloudwatch_metric_alarm" "consumer_withdraw_lambda_errors" {
-  alarm_name          = "${local.name_prefix}-consumer-withdraw-lambda-errors"
+  alarm_name          = "finorbit-consumer-withdraw-lambda-errors"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "Errors"
@@ -475,7 +450,7 @@ resource "aws_cloudwatch_metric_alarm" "consumer_withdraw_lambda_errors" {
 
 # SQS ApproximateNumberOfMessagesVisible - Deposit Queue
 resource "aws_cloudwatch_metric_alarm" "deposit_queue_length" {
-  alarm_name          = "${local.name_prefix}-deposit-queue-length"
+  alarm_name          = "finorbit-deposit-queue-length"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "ApproximateNumberOfMessagesVisible"
@@ -491,7 +466,7 @@ resource "aws_cloudwatch_metric_alarm" "deposit_queue_length" {
 
 # SQS ApproximateNumberOfMessagesVisible - Withdraw Queue
 resource "aws_cloudwatch_metric_alarm" "withdraw_queue_length" {
-  alarm_name          = "${local.name_prefix}-withdraw-queue-length"
+  alarm_name          = "finorbit-withdraw-queue-length"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "ApproximateNumberOfMessagesVisible"
@@ -507,7 +482,7 @@ resource "aws_cloudwatch_metric_alarm" "withdraw_queue_length" {
 
 # RDS CPU Utilization
 resource "aws_cloudwatch_metric_alarm" "rds_high_cpu" {
-  alarm_name          = "${local.name_prefix}-rds-high-cpu"
+  alarm_name          = "finorbit-rds-high-cpu"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "CPUUtilization"
