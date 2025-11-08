@@ -9,153 +9,72 @@ on:
 env:
   AWS_REGION: us-east-1
   TF_IN_AUTOMATION: true
-  COVERAGE_THRESHOLD: 70.0
   GO_ENV: test
+  COVERAGE_THRESHOLD: 70.0
 
 jobs:
   # ===============================
   # 1️⃣ Setup
   # ===============================
   setup:
-    name: 🛠️ Setup
     runs-on: ubuntu-latest
     steps:
-      - name: 📥 Checkout do código
-        uses: actions/checkout@v4
-      - name: 🧰 Configurar Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
 
   # ===============================
-  # 2️⃣ Lint Consumer
+  # 2️⃣ Test & Lint
   # ===============================
-  lint-consumer:
-    name: 🔍 Lint Consumer
+  test-lint:
     runs-on: ubuntu-latest
     needs: setup
+    strategy:
+      matrix:
+        service: [consumer, producer]
     defaults:
       run:
-        working-directory: ./consumer
+        working-directory: ./{{ matrix.service }}
     steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-      - name: 📝 Rodar Lint
+      - uses: actions/checkout@v4
+      - name: 📝 Lint
         run: go fmt ./...
-
-  # ===============================
-  # 3️⃣ Lint Producer
-  # ===============================
-  lint-producer:
-    name: 🔍 Lint Producer
-    runs-on: ubuntu-latest
-    needs: setup
-    defaults:
-      run:
-        working-directory: ./producer
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-      - name: 📝 Rodar Lint
-        run: go fmt ./...
-
-  # ===============================
-  # 4️⃣ Testes Consumer
-  # ===============================
-  test-consumer:
-    name: 🧪 Testes Consumer
-    runs-on: ubuntu-latest
-    needs: [setup, lint-consumer]
-    defaults:
-      run:
-        working-directory: ./consumer
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-      - name: 🧪 Rodar testes
+      - name: 🧪 Test
         env:
           GO_ENV: ${{ env.GO_ENV }}
           COVERAGE_THRESHOLD: ${{ env.COVERAGE_THRESHOLD }}
         run: |
-          set -e
-          set -x
-
-          # Organizar dependências
           go mod tidy
-
-          # Rodar testes com cobertura
           go test -v -coverprofile=coverage.out ./...
-
-          # Obter cobertura total
           coverage=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
           coverage=${coverage:-0}
-          echo "Cobertura Consumer: $coverage%"
-
-          # Comparar com o threshold
+          echo "Cobertura ${{ matrix.service }}: $coverage%"
           cov_int=$(echo "$coverage < $COVERAGE_THRESHOLD" | bc)
           if [ "$cov_int" -eq 1 ]; then
             echo "❌ Cobertura abaixo de $COVERAGE_THRESHOLD% ($coverage%)"
             exit 1
           fi
-
-      - name: 📤 Upload Coverage Consumer
+      - name: Upload Coverage
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-consumer
+          name: coverage-${{ matrix.service }}
           path: coverage.out
 
   # ===============================
-  # 5️⃣ Testes Producer
+  # 3️⃣ Docker Build & Push
   # ===============================
-  test-producer:
-    name: 🧪 Testes Producer
+  docker-build-push:
     runs-on: ubuntu-latest
-    needs: [setup, lint-producer]
+    needs: test-lint
+    strategy:
+      matrix:
+        service: [consumer, producer]
     defaults:
       run:
-        working-directory: ./producer
+        working-directory: ./{{ matrix.service }}
     steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-      - name: 🧪 Rodar testes
-        env:
-          GO_ENV: ${{ env.GO_ENV }}
-          COVERAGE_THRESHOLD: ${{ env.COVERAGE_THRESHOLD }}
-        run: |
-          set -e
-          set -x
-
-          go mod tidy
-          go test -v -coverprofile=coverage.out ./...
-
-          coverage=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
-          coverage=${coverage:-0}
-          echo "Cobertura Producer: $coverage%"
-
-          cov_int=$(echo "$coverage < $COVERAGE_THRESHOLD" | bc)
-          if [ "$cov_int" -eq 1 ]; then
-            echo "❌ Cobertura abaixo de $COVERAGE_THRESHOLD% ($coverage%)"
-            exit 1
-          fi
-      - name: 📤 Upload Coverage Producer
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-producer
-          path: coverage.out
-
-  # ===============================
-  # 6️⃣ Docker Build & Push Consumer
-  # ===============================
-  docker-consumer:
-    name: 🐳 Docker Consumer
-    runs-on: ubuntu-latest
-    needs: test-consumer
-    defaults:
-      run:
-        working-directory: ./consumer
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: ⚙️ Configurar AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -166,52 +85,22 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
       - name: 🧱 Build & Push
         env:
-          ECR_REPOSITORY: finorbit-consumer
+          ECR_REPOSITORY: finorbit-${{ matrix.service }}
           AWS_REGION: ${{ env.AWS_REGION }}
           ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REPOSITORY:latest .
-          docker tag $ECR_REPOSITORY:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
-          docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
 
   # ===============================
-  # 7️⃣ Docker Build & Push Producer
-  # ===============================
-  docker-producer:
-    name: 🐳 Docker Producer
-    runs-on: ubuntu-latest
-    needs: test-producer
-    defaults:
-      run:
-        working-directory: ./producer
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-      - name: ⚙️ Configurar AWS
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: 🐳 Login ECR
-        uses: aws-actions/amazon-ecr-login@v2
-      - name: 🧱 Build & Push
-        env:
-          ECR_REPOSITORY: finorbit-producer
-          AWS_REGION: ${{ env.AWS_REGION }}
-          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-        run: |
-          docker build -t $ECR_REPOSITORY:latest .
-          docker tag $ECR_REPOSITORY:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
-          docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
-
-  # ===============================
-  # 8️⃣ Terraform
+  # 4️⃣ Terraform Deploy
   # ===============================
   terraform:
-    name: 🌍 Terraform Deploy
     runs-on: ubuntu-latest
-    needs: [docker-consumer, docker-producer]
+    needs: docker-build-push
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
@@ -223,32 +112,22 @@ jobs:
         with:
           terraform_version: 1.9.7
 
-      # Inicializar Terraform
       - name: Terraform Init
         run: terraform init -upgrade
         working-directory: ./terraform
 
-      # Opcional: Destruir recursos antigos em dev/test
-      - name: Terraform Safe Destroy (Dev/Test)
-        if: env.ENV != 'prod'
-        run: |
-          echo "⚠️ Ambiente não-prod: destruindo recursos antigos antes do apply..."
-          terraform plan -destroy -out=tfdestroy
-          terraform apply -auto-approve tfdestroy
+      - name: Terraform Plan
+        run: terraform plan -var="docker_image_tag=${{ env.IMAGE_TAG }}" -out=tfplan
         working-directory: ./terraform
 
-      # Planejar & aplicar
-      - name: Terraform Plan
-        run: terraform plan -out=tfplan
-        working-directory: ./terraform
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
         working-directory: ./terraform
 
-      - name: Terraform Safe Rollback
-        if: failure()
+      # 🔹 Opcional: destruir Lambdas antigos em dev/test
+      - name: Destroy old Lambdas (Dev/Test)
+        if: github.ref != 'refs/heads/main' # ou outra condição para prod
         run: |
-          echo "❌ Terraform apply falhou! Iniciando rollback seguro..."
-          chmod +x ./terraform_safe_rollback.sh
-          ./terraform_safe_rollback.sh
+          echo "⚠️ Ambiente não-prod: destruindo Lambdas antigos..."
+          terraform destroy -target=aws_lambda_function.old_lambda_placeholder -auto-approve
         working-directory: ./terraform
