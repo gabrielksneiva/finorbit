@@ -1,26 +1,42 @@
 # =======================
+# 🔧 BLOCO 0 — Variáveis de ambiente / prefixo
+# =======================
+variable "env" {
+  type    = string
+  default = "dev" # Pode ser dev, test, prod
+}
+
+resource "random_id" "suffix" {
+  byte_length = 2
+}
+
+locals {
+  name_prefix = "finorbit-${var.env}-${random_id.suffix.hex}"
+}
+
+# =======================
 # 🔧 BLOCO 1 — Provider AWS
 # =======================
 provider "aws" {
-  region = "us-east-1" # Região Free Tier-friendly
+  region = "us-east-1"
 }
 
 # =======================
 # 🪧 BLOCO 2 — SNS Topic
 # =======================
 resource "aws_sns_topic" "transactions" {
-  name = "finorbit-transactions"
+  name = "${local.name_prefix}-transactions"
 }
 
 # =======================
 # 📬 BLOCO 3 — SQS Queues
 # =======================
 resource "aws_sqs_queue" "transactions_deposit_queue" {
-  name = "finorbit-transactions-deposit-queue"
+  name = "${local.name_prefix}-transactions-deposit-queue"
 }
 
 resource "aws_sqs_queue" "transactions_withdraw_queue" {
-  name = "finorbit-transactions-withdraw-queue"
+  name = "${local.name_prefix}-transactions-withdraw-queue"
 }
 
 # =======================
@@ -31,9 +47,7 @@ resource "aws_sns_topic_subscription" "sns_to_deposit_sqs" {
   protocol  = "sqs"
   endpoint  = aws_sqs_queue.transactions_deposit_queue.arn
 
-  filter_policy = jsonencode({
-    type = ["deposit"]
-  })
+  filter_policy = jsonencode({ type = ["deposit"] })
 }
 
 resource "aws_sns_topic_subscription" "sns_to_withdraw_sqs" {
@@ -41,51 +55,35 @@ resource "aws_sns_topic_subscription" "sns_to_withdraw_sqs" {
   protocol  = "sqs"
   endpoint  = aws_sqs_queue.transactions_withdraw_queue.arn
 
-  filter_policy = jsonencode({
-    type = ["withdraw"]
-  })
+  filter_policy = jsonencode({ type = ["withdraw"] })
 }
 
 # Permitir SNS publicar nas filas
 resource "aws_sqs_queue_policy" "allow_sns_deposit" {
   queue_url = aws_sqs_queue.transactions_deposit_queue.id
-
-  policy = jsonencode({
+  policy    = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Effect    = "Allow"
-        Principal = "*"
-        Action    = "SQS:SendMessage"
-        Resource  = aws_sqs_queue.transactions_deposit_queue.arn
-        Condition = {
-          ArnEquals = {
-            "aws:SourceArn" = aws_sns_topic.transactions.arn
-          }
-        }
-      }
-    ]
+    Statement = [{
+      Effect    = "Allow"
+      Principal = "*"
+      Action    = "SQS:SendMessage"
+      Resource  = aws_sqs_queue.transactions_deposit_queue.arn
+      Condition = { ArnEquals = { "aws:SourceArn" = aws_sns_topic.transactions.arn } }
+    }]
   })
 }
 
 resource "aws_sqs_queue_policy" "allow_sns_withdraw" {
   queue_url = aws_sqs_queue.transactions_withdraw_queue.id
-
-  policy = jsonencode({
+  policy    = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Effect    = "Allow"
-        Principal = "*"
-        Action    = "SQS:SendMessage"
-        Resource  = aws_sqs_queue.transactions_withdraw_queue.arn
-        Condition = {
-          ArnEquals = {
-            "aws:SourceArn" = aws_sns_topic.transactions.arn
-          }
-        }
-      }
-    ]
+    Statement = [{
+      Effect    = "Allow"
+      Principal = "*"
+      Action    = "SQS:SendMessage"
+      Resource  = aws_sqs_queue.transactions_withdraw_queue.arn
+      Condition = { ArnEquals = { "aws:SourceArn" = aws_sns_topic.transactions.arn } }
+    }]
   })
 }
 
@@ -93,19 +91,15 @@ resource "aws_sqs_queue_policy" "allow_sns_withdraw" {
 # 🧠 BLOCO 5 — IAM Role para Lambdas
 # =======================
 resource "aws_iam_role" "lambda_role" {
-  name = "finorbit-lambda-role"
+  name = "${local.name_prefix}-lambda-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Principal = {
-          Service = "lambda.amazonaws.com"
-        }
-        Action = "sts:AssumeRole"
-      }
-    ]
+    Statement = [{
+      Effect = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action = "sts:AssumeRole"
+    }]
   })
 }
 
@@ -135,18 +129,14 @@ resource "aws_sns_topic_policy" "allow_lambda_publish" {
   arn = aws_sns_topic.transactions.arn
 
   policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Sid    = "AllowLambdaPublish",
-        Effect = "Allow",
-        Principal = {
-          AWS = aws_iam_role.lambda_role.arn
-        },
-        Action   = "sns:Publish",
-        Resource = aws_sns_topic.transactions.arn
-      }
-    ]
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "AllowLambdaPublish"
+      Effect    = "Allow"
+      Principal = { AWS = aws_iam_role.lambda_role.arn }
+      Action    = "sns:Publish"
+      Resource  = aws_sns_topic.transactions.arn
+    }]
   })
 }
 
@@ -156,88 +146,69 @@ resource "aws_sns_topic_policy" "allow_lambda_publish" {
 data "aws_caller_identity" "current" {}
 
 resource "aws_ecr_repository" "consumer_repo" {
-  name = "finorbit-consumer"
+  name = "${local.name_prefix}-consumer"
 }
 
 resource "aws_ecr_repository" "producer_repo" {
-  name = "finorbit-producer"
+  name = "${local.name_prefix}-producer"
 }
 
 # Política que permite Lambda puxar imagens
 resource "aws_ecr_repository_policy" "allow_lambda_pull_consumer" {
   repository = aws_ecr_repository.consumer_repo.name
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Sid = "AllowLambdaPull",
-        Effect = "Allow",
-        Principal = {
-          Service = "lambda.amazonaws.com"
-        },
-        Action = [
-          "ecr:BatchGetImage",
-          "ecr:GetDownloadUrlForLayer"
-        ]
-      }
-    ]
+  policy     = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "AllowLambdaPull"
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action    = ["ecr:BatchGetImage","ecr:GetDownloadUrlForLayer"]
+    }]
   })
 }
 
 resource "aws_ecr_repository_policy" "allow_lambda_pull_producer" {
   repository = aws_ecr_repository.producer_repo.name
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Sid = "AllowLambdaPull",
-        Effect = "Allow",
-        Principal = {
-          Service = "lambda.amazonaws.com"
-        },
-        Action = [
-          "ecr:BatchGetImage",
-          "ecr:GetDownloadUrlForLayer"
-        ]
-      }
-    ]
+  policy     = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "AllowLambdaPull"
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action    = ["ecr:BatchGetImage","ecr:GetDownloadUrlForLayer"]
+    }]
   })
 }
 
 # =======================
 # 🧩 BLOCO 7 — Lambdas
 # =======================
-
-## 🔹 Producer Lambda
 data "aws_ecr_image" "producer_latest" {
   repository_name = aws_ecr_repository.producer_repo.name
   image_tag       = "latest"
 }
 
 resource "aws_lambda_function" "producer" {
-  function_name = "finorbit-producer"
+  function_name = "${local.name_prefix}-producer"
   role          = aws_iam_role.lambda_role.arn
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.producer_repo.repository_url}@${data.aws_ecr_image.producer_latest.image_digest}"
   timeout       = 10
 
   environment {
-    variables = {
-      SNS_TOPIC_ARN = aws_sns_topic.transactions.arn
-    }
+    variables = { SNS_TOPIC_ARN = aws_sns_topic.transactions.arn }
   }
 
   depends_on = [aws_ecr_repository.producer_repo]
 }
 
-## 🔹 Consumer - Deposit
 data "aws_ecr_image" "consumer_latest" {
   repository_name = aws_ecr_repository.consumer_repo.name
   image_tag       = "latest"
 }
 
 resource "aws_lambda_function" "consumer_deposit" {
-  function_name = "finorbit-consumer-deposit"
+  function_name = "${local.name_prefix}-consumer-deposit"
   role          = aws_iam_role.lambda_role.arn
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.consumer_repo.repository_url}@${data.aws_ecr_image.consumer_latest.image_digest}"
@@ -257,9 +228,8 @@ resource "aws_lambda_function" "consumer_deposit" {
   depends_on = [aws_db_instance.finorbit_db]
 }
 
-## 🔹 Consumer - Withdraw
 resource "aws_lambda_function" "consumer_withdraw" {
-  function_name = "finorbit-consumer-withdraw"
+  function_name = "${local.name_prefix}-consumer-withdraw"
   role          = aws_iam_role.lambda_role.arn
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.consumer_repo.repository_url}@${data.aws_ecr_image.consumer_latest.image_digest}"
@@ -280,7 +250,7 @@ resource "aws_lambda_function" "consumer_withdraw" {
 }
 
 # =======================
-# 🔁 BLOCO 8 — Event Source Mappings (SQS → Lambda)
+# 🔁 BLOCO 8 — Event Source Mappings
 # =======================
 resource "aws_lambda_event_source_mapping" "deposit_trigger" {
   event_source_arn = aws_sqs_queue.transactions_deposit_queue.arn
@@ -300,7 +270,7 @@ resource "aws_lambda_event_source_mapping" "withdraw_trigger" {
 # 🌐 BLOCO 9 — API Gateway
 # =======================
 resource "aws_apigatewayv2_api" "finorbit_api" {
-  name          = "finorbit-api"
+  name          = "${local.name_prefix}-api"
   protocol_type = "HTTP"
 }
 
@@ -329,8 +299,7 @@ resource "aws_apigatewayv2_stage" "prod" {
   api_id      = aws_apigatewayv2_api.finorbit_api.id
   name        = "prod"
   auto_deploy = true
-
-  depends_on = [aws_apigatewayv2_route.transaction_route]
+  depends_on  = [aws_apigatewayv2_route.transaction_route]
 }
 
 # =======================
@@ -341,7 +310,7 @@ data "aws_vpc" "default" {
 }
 
 resource "aws_security_group" "finorbit_db_sg" {
-  name        = "finorbit-db-sg"
+  name        = "${local.name_prefix}-db-sg"
   description = "Permite acesso ao RDS PostgreSQL"
   vpc_id      = data.aws_vpc.default.id
 
@@ -349,7 +318,7 @@ resource "aws_security_group" "finorbit_db_sg" {
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # apenas para teste
+    cidr_blocks = ["0.0.0.0/0"] # apenas teste
   }
 
   egress {
@@ -361,7 +330,7 @@ resource "aws_security_group" "finorbit_db_sg" {
 }
 
 resource "aws_db_instance" "finorbit_db" {
-  identifier          = "finorbit-db"
+  identifier          = "${local.name_prefix}-db"
   engine              = "postgres"
   instance_class      = "db.t3.micro"
   allocated_storage   = 20
