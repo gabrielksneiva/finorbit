@@ -147,10 +147,18 @@ data "aws_caller_identity" "current" {}
 
 resource "aws_ecr_repository" "consumer_repo" {
   name = "finorbit-consumer"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_ecr_repository" "producer_repo" {
   name = "finorbit-producer"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_ecr_lifecycle_policy" "consumer_policy" {
@@ -365,6 +373,7 @@ variable "create_rds" {
 }
 
 resource "aws_security_group" "finorbit_db_sg" {
+  count = var.create_rds ? 1 : 0
   name        = "finorbit-db-sg"
   description = "Permite acesso ao RDS PostgreSQL"
   vpc_id      = data.aws_vpc.default.id
