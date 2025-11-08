@@ -233,6 +233,10 @@ resource "aws_lambda_function" "producer" {
   image_uri     = "${aws_ecr_repository.producer_repo.repository_url}@${data.aws_ecr_image.producer_latest.image_digest}"
   timeout       = 10
 
+  tracing_config {
+    mode = "Active"
+  }
+
   environment {
     variables = { SNS_TOPIC_ARN = aws_sns_topic.transactions.arn }
   }
@@ -251,6 +255,10 @@ resource "aws_lambda_function" "consumer_deposit" {
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.consumer_repo.repository_url}@${data.aws_ecr_image.consumer_latest.image_digest}"
   timeout       = 10
+
+  tracing_config {
+    mode = "Active"
+  }
 
   environment {
     variables = {
@@ -272,6 +280,10 @@ resource "aws_lambda_function" "consumer_withdraw" {
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.consumer_repo.repository_url}@${data.aws_ecr_image.consumer_latest.image_digest}"
   timeout       = 10
+
+  tracing_config {
+    mode = "Active"
+  }
 
   environment {
     variables = {
@@ -378,6 +390,11 @@ resource "aws_db_instance" "finorbit_db" {
   publicly_accessible = true
   skip_final_snapshot = true
   vpc_security_group_ids = [aws_security_group.finorbit_db_sg.id]
+
+  tags = {
+    Name = "finorbit-db"
+    keep = "true"
+  }
 }
 
 # =======================

@@ -232,3 +232,10 @@ jobs:
         run: terraform apply -auto-approve tfplan
         working-directory: ./terraform
 
+      - name: Terraform Safe Rollback
+        if: failure()
+        run: |
+          echo "❌ Terraform apply falhou! Iniciando rollback seguro..."
+          chmod +x ./terraform/terraform_safe_rollback.sh
+          ./terraform/terraform_safe_rollback.sh
+        working-directory: ./terraform
