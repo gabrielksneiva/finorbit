@@ -37,7 +37,6 @@ var (
 // 🔧 Inicialização segura — executa 1x por container Lambda
 // =========================================================
 func getDB() *sql.DB {
-	// Se já existir um db mockado (nos testes), apenas retorna
 	if db != nil {
 		return db
 	}
