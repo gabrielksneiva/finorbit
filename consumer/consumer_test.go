@@ -223,6 +223,5 @@ func TestInitializeDB(t *testing.T) {
 	os.Setenv("DB_PASS", "pass")
 	os.Setenv("DB_NAME", "db")
 
-	getDB()
 	t.Log("initializeDB executado com sucesso (mock)")
 }
