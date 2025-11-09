@@ -11,6 +11,12 @@ resource "aws_lambda_function" "producer" {
   package_type    = "Image"
   image_uri       = "${local.repositories.producer}:${var.producer_image_tag}"
   source_code_hash = base64sha256(var.producer_image_tag)
+
+  environment {
+    variables = {
+      SNS_TOPIC_ARN = data.terraform_remote_state.infra.outputs.sns_topic_arn
+    }
+  }
 }
 
 resource "aws_lambda_function" "consumer_deposit" {
