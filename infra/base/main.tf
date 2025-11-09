@@ -120,20 +120,6 @@ resource "aws_ecr_repository_policy" "lambda_access" {
 }
 
 # =======================
-# 🌐 BLOCO 4 — API Gateway
-# =======================
-resource "aws_apigatewayv2_api" "finorbit_api" {
-  name          = "${local.name_prefix}-api"
-  protocol_type = "HTTP"
-}
-
-resource "aws_apigatewayv2_stage" "prod" {
-  api_id      = aws_apigatewayv2_api.finorbit_api.id
-  name        = "prod"
-  auto_deploy = true
-}
-
-# =======================
 # 💾 BLOCO 5 — Banco de Dados (opcional)
 # =======================
 data "aws_vpc" "default" { default = true }

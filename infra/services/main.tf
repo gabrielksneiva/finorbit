@@ -49,3 +49,45 @@ resource "aws_lambda_event_source_mapping" "withdraw_trigger" {
   batch_size       = 1
   enabled          = true
 }
+
+# =======================
+# 🌐 API Gateway
+# =======================
+
+resource "aws_apigatewayv2_api" "finorbit_api" {
+  name          = "${local.name_prefix}-api"
+  protocol_type = "HTTP"
+}
+
+resource "aws_apigatewayv2_integration" "producer_integration" {
+  api_id                 = aws_apigatewayv2_api.finorbit_api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.producer.invoke_arn
+  integration_method     = "POST"
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "transactions_route" {
+  api_id    = aws_apigatewayv2_api.finorbit_api.id
+  route_key = "POST /transaction"
+  target    = "integrations/${aws_apigatewayv2_integration.producer_integration.id}"
+}
+
+resource "aws_lambda_permission" "allow_apigw_invoke" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.producer.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.finorbit_api.execution_arn}/*/*"
+}
+
+resource "aws_apigatewayv2_stage" "prod" {
+  api_id      = aws_apigatewayv2_api.finorbit_api.id
+  name        = "prod"
+  auto_deploy = true
+}
+
+output "api_gateway_url" {
+  value       = aws_apigatewayv2_stage.prod.invoke_url
+  description = "URL pública do API Gateway (stage prod)"
+}

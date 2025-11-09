@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
+	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/pborman/uuid"
 	"github.com/shopspring/decimal"
 )
@@ -93,6 +94,12 @@ func handler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.AP
 	_, err = snsClient.Publish(ctx, &sns.PublishInput{
 		TopicArn: aws.String(topicARN),
 		Message:  aws.String(string(data)),
+		MessageAttributes: map[string]types.MessageAttributeValue{
+			"type": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String(txReq.Type),
+			},
+		},
 	})
 	if err != nil {
 		log.Printf("❌ Erro ao publicar no SNS: %v", err)
