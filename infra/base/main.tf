@@ -123,6 +123,10 @@ resource "aws_ecr_repository_policy" "lambda_access" {
 # 💾 BLOCO 5 — Banco de Dados (opcional)
 # =======================
 data "aws_vpc" "default" { default = true }
+variable "create_db" {
+  default = true
+}
+
 
 resource "aws_security_group" "finorbit_db_sg" {
   count  = var.create_rds ? 1 : 0

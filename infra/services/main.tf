@@ -25,6 +25,15 @@ resource "aws_lambda_function" "consumer_deposit" {
   package_type    = "Image"
   image_uri       = "${local.repositories.consumer}:${var.consumer_image_tag}"
   source_code_hash = base64sha256(var.consumer_image_tag)
+
+  environment {
+    variables = {
+      DB_HOST = data.terraform_remote_state.infra.outputs.db_host
+      DB_USER = data.terraform_remote_state.infra.outputs.db_user
+      DB_PASS = data.terraform_remote_state.infra.outputs.db_pass
+      DB_NAME = data.terraform_remote_state.infra.outputs.db_name
+    }
+  }
 }
 
 resource "aws_lambda_function" "consumer_withdraw" {
@@ -33,6 +42,15 @@ resource "aws_lambda_function" "consumer_withdraw" {
   package_type    = "Image"
   image_uri       = "${local.repositories.consumer}:${var.consumer_image_tag}"
   source_code_hash = base64sha256(var.consumer_image_tag)
+
+  environment {
+    variables = {
+      DB_HOST = data.terraform_remote_state.infra.outputs.db_host
+      DB_USER = data.terraform_remote_state.infra.outputs.db_user
+      DB_PASS = data.terraform_remote_state.infra.outputs.db_pass
+      DB_NAME = data.terraform_remote_state.infra.outputs.db_name
+    }
+  }
 }
 
 # Triggers

@@ -26,3 +26,28 @@ output "sns_topic_arn" {
   value       = aws_sns_topic.transactions.arn
   description = "ARN do tópico SNS de transações"
 }
+
+# =======================
+# 📦 RDS OUTPUTS
+# =======================
+
+output "db_host" {
+  value       = try(aws_db_instance.finorbit_db[0].address, null)
+  description = "RDS endpoint"
+}
+
+output "db_user" {
+  value       = "finorbit_admin"
+  description = "RDS username"
+}
+
+output "db_name" {
+  value       = "finorbit"
+  description = "RDS database name"
+}
+
+output "db_pass" {
+  value       = "Finorbit123!"
+  sensitive   = true
+  description = "RDS password"
+}
