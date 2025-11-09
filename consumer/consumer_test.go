@@ -242,3 +242,7 @@ func TestGetDB_MockConnection(t *testing.T) {
 	getDB() // deve inicializar sem erro
 	t.Log("getDB executado com sucesso (mock)")
 }
+
+func TestMain(m *testing.M) {
+	os.Setenv("GO_ENV", "test")
+}
