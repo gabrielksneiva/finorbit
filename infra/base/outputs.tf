@@ -23,5 +23,6 @@ output "sqs_withdraw_arn" {
 
 # SNS Topic
 output "sns_topic_arn" {
-  value = aws_sns_topic.transactions.arn
+  value       = aws_sns_topic.transactions.arn
+  description = "ARN do tópico SNS de transações"
 }
