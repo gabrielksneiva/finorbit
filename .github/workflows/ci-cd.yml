@@ -65,7 +65,7 @@ jobs:
       - uses: aws-actions/amazon-ecr-login@v2
       - run: |
           set -e
-          REPO=finorbit-${{ matrix.service }}
+          REPO=finorbit-${{ vars.ENV || 'dev' }}-${{ matrix.service }}
           ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}
           REGION=${{ env.AWS_REGION }}
 
