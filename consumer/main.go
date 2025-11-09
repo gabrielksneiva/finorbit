@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -24,45 +25,59 @@ type Transaction struct {
 	Timestamp string          `json:"timestamp"`
 }
 
-var db *sql.DB
+// =========================================================
+// 🔒 Singleton da conexão com o banco
+// =========================================================
+var (
+	db   *sql.DB
+	once sync.Once
+)
 
 // =========================================================
-// 🔧 Inicialização global — executa 1x por container Lambda
+// 🔧 Inicialização segura — executa 1x por container Lambda
 // =========================================================
-func initializeDB() {
-	if os.Getenv("GO_ENV") == "test" {
-		log.Println("🧪 Ambiente de teste detectado — conexão RDS ignorada.")
-		return
-	}
+func getDB() *sql.DB {
+	once.Do(func() {
+		if os.Getenv("GO_ENV") == "test" {
+			log.Println("🧪 Ambiente de teste detectado — conexão RDS ignorada.")
+			return
+		}
 
-	connStr := fmt.Sprintf(
-		"host=%s user=%s password=%s dbname=%s sslmode=require",
-		os.Getenv("DB_HOST"),
-		os.Getenv("DB_USER"),
-		os.Getenv("DB_PASS"),
-		os.Getenv("DB_NAME"),
-	)
+		connStr := fmt.Sprintf(
+			"host=%s user=%s password=%s dbname=%s sslmode=require",
+			os.Getenv("DB_HOST"),
+			os.Getenv("DB_USER"),
+			os.Getenv("DB_PASS"),
+			os.Getenv("DB_NAME"),
+		)
 
-	var err error
-	db, err = sql.Open("postgres", connStr)
-	if err != nil {
-		log.Fatalf("❌ Erro ao inicializar conexão: %v", err)
-	}
+		var err error
+		db, err = sql.Open("postgres", connStr)
+		if err != nil {
+			log.Fatalf("❌ Erro ao inicializar conexão: %v", err)
+		}
 
-	// Testa a conexão
-	if err := db.Ping(); err != nil {
-		log.Fatalf("❌ Falha ao conectar ao banco: %v", err)
-	}
+		// Testa a conexão
+		if err := db.Ping(); err != nil {
+			log.Fatalf("❌ Falha ao conectar ao banco: %v", err)
+		}
 
-	log.Println("✅ Conexão com RDS estabelecida com sucesso.")
+		log.Println("✅ Conexão com RDS estabelecida com sucesso.")
+		ensureTableExists()
+	})
 
-	ensureTableExists()
+	return db
 }
 
 // =========================================================
 // 🏗️ Garante que a tabela exista antes de inserir
 // =========================================================
 func ensureTableExists() {
+	d := db
+	if d == nil {
+		return
+	}
+
 	checkQuery := `
 	SELECT EXISTS (
 		SELECT FROM information_schema.tables
@@ -71,7 +86,7 @@ func ensureTableExists() {
 	`
 
 	var exists bool
-	if err := db.QueryRow(checkQuery).Scan(&exists); err != nil {
+	if err := d.QueryRow(checkQuery).Scan(&exists); err != nil {
 		log.Fatalf("❌ Erro ao verificar existência da tabela: %v", err)
 	}
 
@@ -92,7 +107,7 @@ func ensureTableExists() {
 	);
 	`
 
-	if _, err := db.Exec(createQuery); err != nil {
+	if _, err := d.Exec(createQuery); err != nil {
 		log.Fatalf("❌ Erro ao criar tabela 'transactions': %v", err)
 	}
 
@@ -104,6 +119,12 @@ func ensureTableExists() {
 // =========================================================
 func handler(ctx context.Context, sqsEvent events.SQSEvent) error {
 	log.Println("🚀 Iniciando processamento de mensagens...")
+
+	d := getDB()
+	if d == nil {
+		log.Println("⚠️ Banco não inicializado — abortando execução.")
+		return nil
+	}
 
 	for _, record := range sqsEvent.Records {
 		// As mensagens vêm do SNS → SQS
@@ -119,7 +140,7 @@ func handler(ctx context.Context, sqsEvent events.SQSEvent) error {
 			continue
 		}
 
-		_, err := db.Exec(
+		_, err := d.Exec(
 			`INSERT INTO transactions (user_id, amount, type, timestamp)
 			 VALUES ($1, $2, $3, $4)`,
 			tx.UserID, tx.Amount.String(), tx.Type, tx.Timestamp,
@@ -145,12 +166,8 @@ func main() {
 		return
 	}
 
-	// segurança extra caso init não tenha rodado (containers frios)
-	if db == nil {
-		log.Println("⚠️ Conexão ausente — reinicializando...")
-		initializeDB()
-	}
+	// Garante que a conexão seja inicializada no primeiro cold start
+	getDB()
 
-	ensureTableExists()
 	lambda.Start(handler)
 }
