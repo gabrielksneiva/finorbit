@@ -10,9 +10,8 @@ terraform {
 
   backend "s3" {
     bucket  = "finorbit-terraform-state"
-    key     = "env:/dev/infra/base/terraform.tfstate"
+    key     = "infra/services/terraform.tfstate"
     region  = "us-east-1"
-    encrypt = true
   }
 }
 
