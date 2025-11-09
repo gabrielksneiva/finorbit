@@ -37,6 +37,11 @@ var (
 // 🔧 Inicialização segura — executa 1x por container Lambda
 // =========================================================
 func getDB() *sql.DB {
+	// Se já existir um db mockado (nos testes), apenas retorna
+	if db != nil {
+		return db
+	}
+
 	once.Do(func() {
 		if os.Getenv("GO_ENV") == "test" {
 			log.Println("🧪 Ambiente de teste detectado — conexão RDS ignorada.")
