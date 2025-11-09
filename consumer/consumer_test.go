@@ -6,16 +6,26 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"sync"
 	"testing"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/aws/aws-lambda-go/events"
 )
 
-// =============================================
+// =========================================================
+// 🧹 Reset global entre testes
+// =========================================================
+func resetDBSingleton() {
+	db = nil
+	once = sync.Once{}
+}
+
+// =========================================================
 // 🧱 Teste de verificação da tabela (ensureTableExists)
-// =============================================
+// =========================================================
 func TestEnsureTableExists_TableAlreadyExists(t *testing.T) {
+	resetDBSingleton()
 	dbMock, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("Erro ao criar mock: %v", err)
@@ -34,6 +44,7 @@ func TestEnsureTableExists_TableAlreadyExists(t *testing.T) {
 }
 
 func TestEnsureTableExists_CreateTableWhenMissing(t *testing.T) {
+	resetDBSingleton()
 	dbMock, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("Erro ao criar mock: %v", err)
@@ -54,10 +65,11 @@ func TestEnsureTableExists_CreateTableWhenMissing(t *testing.T) {
 	}
 }
 
-// =============================================
+// =========================================================
 // 📬 Teste do handler de mensagens (Lambda handler)
-// =============================================
+// =========================================================
 func TestHandler_ProcessaMensagemValida(t *testing.T) {
+	resetDBSingleton()
 	dbMock, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("Erro ao criar mock: %v", err)
@@ -89,6 +101,7 @@ func TestHandler_ProcessaMensagemValida(t *testing.T) {
 }
 
 func TestHandler_MensagemInvalida(t *testing.T) {
+	resetDBSingleton()
 	event := events.SQSEvent{
 		Records: []events.SQSMessage{{Body: "mensagem inválida"}},
 	}
@@ -99,6 +112,7 @@ func TestHandler_MensagemInvalida(t *testing.T) {
 }
 
 func TestHandler_InsertFails(t *testing.T) {
+	resetDBSingleton()
 	dbMock, mock, _ := sqlmock.New()
 	defer dbMock.Close()
 	db = dbMock
@@ -120,9 +134,9 @@ func TestHandler_InsertFails(t *testing.T) {
 	}
 }
 
-// =============================================
+// =========================================================
 // ⚠️ Testes de falha na verificação/criação da tabela
-// =============================================
+// =========================================================
 func TestEnsureTableExists_CheckQueryFails(t *testing.T) {
 	if os.Getenv("BE_CRASHER") == "1" {
 		dbMock, mock, _ := sqlmock.New()
@@ -163,10 +177,11 @@ func TestEnsureTableExists_CreateTableFails(t *testing.T) {
 	t.Fatalf("esperava que ensureTableExists chamasse os.Exit(1) ao falhar ao criar tabela, mas não chamou")
 }
 
-// =============================================
+// =========================================================
 // 🧪 Casos extras para cobertura >70%
-// =============================================
+// =========================================================
 func TestHandler_SQSEventVazio(t *testing.T) {
+	resetDBSingleton()
 	event := events.SQSEvent{Records: []events.SQSMessage{}}
 	err := handler(context.Background(), event)
 	if err != nil {
@@ -175,6 +190,7 @@ func TestHandler_SQSEventVazio(t *testing.T) {
 }
 
 func TestHandler_SNSSemMessage(t *testing.T) {
+	resetDBSingleton()
 	snsBody := map[string]interface{}{"Data": "valor"}
 	bodyBytes, _ := json.Marshal(snsBody)
 	event := events.SQSEvent{
@@ -187,6 +203,7 @@ func TestHandler_SNSSemMessage(t *testing.T) {
 }
 
 func TestHandler_MessageCorrompido(t *testing.T) {
+	resetDBSingleton()
 	snsBody := map[string]interface{}{"Message": "{invalid json}"}
 	bodyBytes, _ := json.Marshal(snsBody)
 	event := events.SQSEvent{
@@ -198,30 +215,30 @@ func TestHandler_MessageCorrompido(t *testing.T) {
 	}
 }
 
-// =============================================
+// =========================================================
 // 🧠 Teste do main e inicialização manual
-// =============================================
+// =========================================================
 func TestMainFunction(t *testing.T) {
+	resetDBSingleton()
 	os.Setenv("GO_ENV", "test")
 	main() // não deve iniciar Lambda
 	t.Log("Main executado no modo teste com sucesso")
 }
 
-func TestInitializeDB(t *testing.T) {
-	dbMock, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("Erro ao criar mock: %v", err)
-	}
-	defer dbMock.Close()
+func TestGetDB_MockConnection(t *testing.T) {
+	resetDBSingleton()
 
-	// Simula conexão SQL válida e Ping ok
-	db = dbMock
-	mock.ExpectQuery(`SELECT EXISTS`).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
-
+	// simula variáveis de ambiente
 	os.Setenv("DB_HOST", "localhost")
 	os.Setenv("DB_USER", "user")
 	os.Setenv("DB_PASS", "pass")
 	os.Setenv("DB_NAME", "db")
 
-	t.Log("initializeDB executado com sucesso (mock)")
+	// substitui sql.Open via variável global mockada se quiser,
+	// mas aqui apenas forçamos o retorno nil para simular sem RDS
+	dbMock, _, _ := sqlmock.New()
+	db = dbMock
+
+	getDB() // deve inicializar sem erro
+	t.Log("getDB executado com sucesso (mock)")
 }
