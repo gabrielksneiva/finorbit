@@ -51,3 +51,16 @@ output "db_pass" {
   sensitive   = true
   description = "RDS password"
 }
+
+output "vpc_id" {
+  value = data.aws_vpc.default.id
+}
+
+output "default_sg_id" {
+  value = data.aws_security_group.default.id
+}
+
+output "private_subnet_ids" {
+  value       = data.aws_subnets.private.ids
+  description = "IDs das subnets privadas da VPC"
+}

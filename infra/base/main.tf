@@ -1,7 +1,6 @@
 ##############################################
-# 📁 /infra/main.tf
-# Define toda a infraestrutura base e permanente.
-# Lambdas e imagens são provisionados em outro módulo (/services)
+# 📁 /infra/base/main.tf
+# Infraestrutura base: VPC, SG default, RDS, SNS/SQS, ECR
 ##############################################
 
 locals {
@@ -9,7 +8,7 @@ locals {
 }
 
 # =======================
-# 🧠 BLOCO 1 — IAM Role
+# 🧠 IAM Role
 # =======================
 data "aws_iam_policy_document" "lambda_assume_role" {
   statement {
@@ -38,7 +37,7 @@ resource "aws_iam_role_policy_attachment" "lambda_policies" {
 }
 
 # =======================
-# 📨 BLOCO 2 — SNS & SQS
+# 📨 SNS & SQS
 # =======================
 resource "aws_sns_topic" "transactions" {
   name = "${local.name_prefix}-transactions"
@@ -62,9 +61,9 @@ resource "aws_sns_topic_subscription" "sns_to_sqs" {
     withdraw = aws_sqs_queue.transactions_withdraw_queue.arn
   }
 
-  topic_arn    = aws_sns_topic.transactions.arn
-  protocol     = "sqs"
-  endpoint     = each.value
+  topic_arn     = aws_sns_topic.transactions.arn
+  protocol      = "sqs"
+  endpoint      = each.value
   filter_policy = jsonencode({ type = [each.key] })
 }
 
@@ -75,7 +74,7 @@ resource "aws_sqs_queue_policy" "allow_sns_publish" {
   }
 
   queue_url = each.value.id
-  policy    = jsonencode({
+  policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect    = "Allow"
@@ -88,18 +87,16 @@ resource "aws_sqs_queue_policy" "allow_sns_publish" {
 }
 
 # =======================
-# 📦 BLOCO 3 — ECR
+# 📦 ECR
 # =======================
-# Repositórios criados apenas uma vez. 
-# "force_delete = true" evita erro em destroy (sem deletar imagens nos deploys)
 resource "aws_ecr_repository" "consumer_repo" {
-  name          = "${local.name_prefix}-consumer"
-  force_delete  = true
+  name         = "${local.name_prefix}-consumer"
+  force_delete = true
 }
 
 resource "aws_ecr_repository" "producer_repo" {
-  name          = "${local.name_prefix}-producer"
-  force_delete  = true
+  name         = "${local.name_prefix}-producer"
+  force_delete = true
 }
 
 resource "aws_ecr_repository_policy" "lambda_access" {
@@ -111,27 +108,36 @@ resource "aws_ecr_repository_policy" "lambda_access" {
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [{
-      Sid       = "AllowLambdaPull",
-      Effect    = "Allow",
-      Principal = { Service = "lambda.amazonaws.com" },
+      Sid       = "AllowLambdaPull"
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
       Action    = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
     }]
   })
 }
 
 # =======================
-# 💾 BLOCO 5 — Banco de Dados (opcional)
+# 💾 Banco de Dados (RDS)
 # =======================
-data "aws_vpc" "default" { default = true }
-variable "create_db" {
+
+# Obtém a VPC e o Security Group default
+data "aws_vpc" "default" {
   default = true
 }
 
-
-resource "aws_security_group" "finorbit_db_sg" {
-  count  = var.create_rds ? 1 : 0
-  name   = "${local.name_prefix}-db-sg"
+data "aws_security_group" "default" {
+  filter {
+    name   = "group-name"
+    values = ["default"]
+  }
   vpc_id = data.aws_vpc.default.id
+}
+
+data "aws_subnets" "private" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
 }
 
 resource "aws_db_instance" "finorbit_db" {
@@ -145,5 +151,5 @@ resource "aws_db_instance" "finorbit_db" {
   db_name                 = "finorbit"
   publicly_accessible     = true
   skip_final_snapshot     = true
-  vpc_security_group_ids  = var.create_rds ? [aws_security_group.finorbit_db_sg[0].id] : []
+  vpc_security_group_ids  = [data.aws_security_group.default.id]
 }
