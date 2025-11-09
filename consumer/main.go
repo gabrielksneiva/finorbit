@@ -41,6 +41,7 @@ func getDB() *sql.DB {
 	if db != nil {
 		return db
 	}
+	
 
 	once.Do(func() {
 		if os.Getenv("GO_ENV") == "test" {

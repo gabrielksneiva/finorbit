@@ -21,6 +21,10 @@ func resetDBSingleton() {
 	once = sync.Once{}
 }
 
+func init() {
+	os.Setenv("GO_ENV", "test")
+}
+
 // =========================================================
 // 🧱 Teste de verificação da tabela (ensureTableExists)
 // =========================================================
@@ -227,22 +231,13 @@ func TestMainFunction(t *testing.T) {
 
 func TestGetDB_MockConnection(t *testing.T) {
 	resetDBSingleton()
-
-	// simula variáveis de ambiente
-	os.Setenv("DB_HOST", "localhost")
-	os.Setenv("DB_USER", "user")
-	os.Setenv("DB_PASS", "pass")
-	os.Setenv("DB_NAME", "db")
-
-	// substitui sql.Open via variável global mockada se quiser,
-	// mas aqui apenas forçamos o retorno nil para simular sem RDS
-	dbMock, _, _ := sqlmock.New()
-	db = dbMock
-
-	getDB() // deve inicializar sem erro
-	t.Log("getDB executado com sucesso (mock)")
-}
-
-func TestMain(m *testing.M) {
 	os.Setenv("GO_ENV", "test")
+
+	dbMock, _, _ := sqlmock.New()
+	db = dbMock // força o mock antes da inicialização
+
+	result := getDB()
+	if result == nil {
+		t.Fatalf("getDB retornou nil — deveria retornar mock")
+	}
 }
